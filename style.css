@@ -1074,6 +1074,64 @@ body::before {
   border-radius: 5px;
 }
 
+.telemetry-panel {
+  margin: 20px 0 4px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  background: rgba(77,166,255,0.045);
+  border: 1px solid rgba(77,166,255,0.16);
+  border-radius: 6px;
+}
+
+.telemetry-panel h3 {
+  margin: 5px 0 3px;
+  color: #fff;
+  font-size: 13px;
+}
+
+.telemetry-panel p {
+  color: #80808b;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.telemetry-actions {
+  min-width: 245px;
+  display: grid;
+  gap: 8px;
+}
+
+.telemetry-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9d9da7;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.telemetry-status i {
+  width: 7px;
+  height: 7px;
+  background: var(--yellow);
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(245,200,66,0.4);
+}
+
+.telemetry-status.connected {
+  color: var(--green);
+}
+
+.telemetry-status.connected i {
+  background: var(--green);
+  box-shadow: 0 0 10px rgba(0,217,126,0.55);
+}
+
 .model-note p {
   color: #aaaab4;
   font-size: 12px;
@@ -1810,6 +1868,15 @@ body::before {
     align-items: start;
     flex-direction: column;
     gap: 8px;
+  }
+
+  .telemetry-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .telemetry-actions {
+    min-width: 0;
   }
 
   .strategy-grid,

@@ -33,6 +33,8 @@ const tyreBase = {
   wet:    {name:"Full Wet",   cssClass:"tyre-wet",    lifeRatio:0.62, pace:0.00, degradation:0.035, warmup:0.65}
 };
 
+let f1TelemetryCalibration = null;
+
 /* -----------------------------------------------
    UTILITY
 ----------------------------------------------- */
@@ -114,6 +116,13 @@ function orderPlans(plans, strategyStyle, startPos){
 }
 
 function tyreLife(tyreKey, track, wear, driverStyle){
+  const telemetryTyre = f1TelemetryCalibration && f1TelemetryCalibration.compounds
+    ? f1TelemetryCalibration.compounds[tyreKey]
+    : null;
+  if(telemetryTyre && Number.isFinite(telemetryTyre.usableLife) && telemetryTyre.usableLife > 0){
+    return telemetryTyre.usableLife;
+  }
+
   const tyre = tyreBase[tyreKey] || tyreBase.medium;
   const base = Math.max(8, track.laps * tyre.lifeRatio);
   let wearFactor = track.wearMod || 1.0;
@@ -367,13 +376,29 @@ function strategyWearFactor(track, wear, driverStyle){
 
 function stintTimeCost(tyreKey, length, context){
   const tyre = tyreBase[tyreKey] || tyreBase.medium;
+  const telemetryTyre = f1TelemetryCalibration && f1TelemetryCalibration.compounds
+    ? f1TelemetryCalibration.compounds[tyreKey]
+    : null;
   const life = tyreLife(tyreKey, context.track, context.wear, context.driverStyle);
   const wearFactor = strategyWearFactor(context.track, context.wear, context.driverStyle);
   const ageCost = tyre.degradation * wearFactor * length * Math.max(0, length - 1) / 2;
   const ratio = length / Math.max(1, life);
   const cliffCost = ratio > 0.88 ? Math.pow((ratio - 0.88) * 12, 2) * (tyreKey === "soft" ? 1.1 : 0.78) : 0;
   const warmupCost = tyre.warmup * (context.trackTemp === "cold" ? 1.25 : 1);
-  return tyre.pace * length + ageCost + cliffCost + warmupCost;
+  const pace = telemetryTyre && Number.isFinite(telemetryTyre.normalizedDelta)
+    ? telemetryTyre.normalizedDelta
+    : tyre.pace;
+  return pace * length + ageCost + cliffCost + warmupCost;
+}
+
+function sequenceAvailable(sequence){
+  if(!f1TelemetryCalibration || !f1TelemetryCalibration.compounds) return true;
+  const counts = {};
+  for(const tyre of sequence) counts[tyre] = (counts[tyre] || 0) + 1;
+  return Object.entries(counts).every(([tyre, count]) => {
+    const data = f1TelemetryCalibration.compounds[tyre];
+    return !data || !Number.isFinite(data.availableSets) || count <= data.availableSets;
+  });
 }
 
 function strategyBias(sequence, context){
@@ -548,7 +573,7 @@ function buildDryRaceStrategies(track, laps, wear, startPos, aiDifficulty, strat
     );
   }
 
-  return selectDiversePlans(sequences.map(sequence => optimizeSequence(sequence, laps, context)), context);
+  return selectDiversePlans(sequences.filter(sequenceAvailable).map(sequence => optimizeSequence(sequence, laps, context)), context);
 }
 
 function dryTyreForWeatherSegment(length, track, wear, driverStyle, profile){
@@ -685,6 +710,53 @@ function setInvalidFields(ids){
   for(const id of fields){
     const el = document.getElementById(id);
     if(el) el.classList.toggle("is-invalid", ids.includes(id));
+  }
+}
+
+function normalizeTelemetryCalibration(data){
+  if(!data || !data.connected || !data.compounds) return null;
+  const compounds = {};
+  const deltas = Object.values(data.compounds)
+    .map(compound => Number(compound.lapDeltaMs))
+    .filter(Number.isFinite);
+  const minimumDelta = deltas.length ? Math.min(...deltas) : 0;
+
+  for(const [key, compound] of Object.entries(data.compounds)){
+    compounds[key] = {
+      ...compound,
+      normalizedDelta:Number.isFinite(Number(compound.lapDeltaMs))
+        ? Math.max(0, (Number(compound.lapDeltaMs) - minimumDelta) / 1000)
+        : null
+    };
+  }
+  return {...data, compounds};
+}
+
+function updateTelemetryStatus(message, connected = false){
+  const status = document.getElementById("telemetryStatus");
+  if(!status) return;
+  status.classList.toggle("connected", connected);
+  status.innerHTML = `<i></i> ${message}`;
+}
+
+async function connectF1Telemetry(){
+  updateTelemetryStatus("Ricerca telemetria F1 25...");
+  try{
+    const response = await fetch("http://127.0.0.1:20778/api/telemetry", {cache:"no-store"});
+    if(!response.ok) throw new Error("Bridge non disponibile");
+    const data = await response.json();
+    const calibration = normalizeTelemetryCalibration(data);
+    if(!calibration){
+      f1TelemetryCalibration = null;
+      updateTelemetryStatus("Bridge attivo, in attesa di F1 25");
+      return;
+    }
+    f1TelemetryCalibration = calibration;
+    const dryCompounds = ["soft","medium","hard"].filter(key => calibration.compounds[key]).length;
+    updateTelemetryStatus(`Telemetria F1 25 attiva · ${dryCompounds}/3 mescole`, true);
+  } catch(error){
+    f1TelemetryCalibration = null;
+    updateTelemetryStatus("Modello stimato attivo");
   }
 }
 
@@ -970,6 +1042,7 @@ function calculateAll(){
         <div class="summary-item"><div class="s-label">Sessione</div><div class="s-value">${sessionLabel(sessionType)}</div></div>
         <div class="summary-item"><div class="s-label">Assistenze</div><div class="s-value good">Tutte attive</div></div>
         <div class="summary-item"><div class="s-label">IA Avversari</div><div class="s-value">${ai.name} (${aiDifficulty})</div></div>
+        <div class="summary-item"><div class="s-label">Dati gomme</div><div class="s-value ${f1TelemetryCalibration ? "good" : "warn"}">${f1TelemetryCalibration ? "Telemetria F1 25" : "Modello stimato"}</div></div>
         <div class="summary-item"><div class="s-label">Finestra meteo</div><div class="s-value warn">${weatherWindowText(weatherAnalysis, laps)}</div></div>
         <div class="summary-item"><div class="s-label">Piano principale</div><div class="s-value">${main.tyres.map(tag).join('<span class="arrow-sep">→</span>')}</div></div>
         <div class="summary-item"><div class="s-label">${isQualy ? "Run" : "Pit stop"}</div><div class="s-value highlight">${pitCall}</div></div>
@@ -1016,9 +1089,12 @@ function calculateAll(){
 function initializeApp(){
   const trackSelect = document.getElementById("track");
   const calculateBtn = document.getElementById("calculateBtn");
+  const telemetryBtn = document.getElementById("connectTelemetryBtn");
 
   if(trackSelect) trackSelect.addEventListener("change", loadTrackDefaults);
   if(calculateBtn) calculateBtn.addEventListener("click", calculateAll);
+  if(telemetryBtn) telemetryBtn.addEventListener("click", connectF1Telemetry);
+  if(telemetryBtn) connectF1Telemetry();
 }
 
 document.addEventListener("DOMContentLoaded", initializeApp);
