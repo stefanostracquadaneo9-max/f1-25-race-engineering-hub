@@ -353,53 +353,115 @@ function pdfSafeText(value){
     .replace(/\)/g, "\\)");
 }
 
-function pdfText(text, x, y, size, color = "0 0 0"){
-  return `BT /F1 ${size} Tf ${color} rg 1 0 0 1 ${x} ${y} Tm (${pdfSafeText(text)}) Tj ET\n`;
+function pdfText(text, x, y, size, color = "0 0 0", font = "F1"){
+  return `BT /${font} ${size} Tf ${color} rg 1 0 0 1 ${x} ${y} Tm (${pdfSafeText(text)}) Tj ET\n`;
+}
+
+function pdfRect(x, y, width, height, color){
+  return `${color} rg ${x} ${y} ${width} ${height} re f\n`;
+}
+
+function pdfStrokeRect(x, y, width, height, color, lineWidth = 1){
+  return `${color} RG ${lineWidth} w ${x} ${y} ${width} ${height} re S\n`;
+}
+
+function pdfLine(x1, y1, x2, y2, color, lineWidth = 1){
+  return `${color} RG ${lineWidth} w ${x1} ${y1} m ${x2} ${y2} l S\n`;
+}
+
+function pdfSetupSection(title, items, topY){
+  const sectionHeight = 31 + items.length * 28;
+  const bottomY = topY - sectionHeight;
+  let stream = pdfRect(34, bottomY, 527, sectionHeight, "0.071 0.071 0.090");
+  stream += pdfStrokeRect(34, bottomY, 527, sectionHeight, "0.18 0.18 0.22", 0.7);
+  stream += pdfRect(34, topY - 31, 527, 31, "0.10 0.10 0.125");
+  stream += pdfRect(34, topY - 31, 4, 31, "0.882 0.024 0");
+  stream += pdfText(title, 48, topY - 20, 10, "0.97 0.97 0.98", "F3");
+
+  items.forEach(([label, value], index) => {
+    const rowTop = topY - 31 - index * 28;
+    const rowBottom = rowTop - 28;
+    if(index % 2 === 1) stream += pdfRect(39, rowBottom, 517, 28, "0.086 0.086 0.106");
+    stream += pdfLine(39, rowBottom, 556, rowBottom, "0.16 0.16 0.20", 0.45);
+    stream += pdfText(label, 48, rowBottom + 10, 8.2, "0.64 0.64 0.68");
+    stream += pdfRect(468, rowBottom + 5, 78, 18, "0.13 0.13 0.16");
+    stream += pdfText(value, 479, rowBottom + 11, 9.2, "1 1 1", "F3");
+  });
+
+  return {stream, nextY:bottomY - 12};
 }
 
 function createSetupPdfBlob(setup, track, profile){
+  const colors = {
+    background:"0.020 0.020 0.027",
+    surface:"0.055 0.055 0.071",
+    red:"0.882 0.024 0",
+    text:"0.97 0.97 0.98",
+    muted:"0.57 0.57 0.62",
+    line:"0.14 0.14 0.18"
+  };
   const sectionGroups = [
     setupPdfSections(setup).slice(0, 3),
     setupPdfSections(setup).slice(3)
   ];
   const pageStreams = sectionGroups.map((sections, pageIndex) => {
-    let stream = "0.94 0.94 0.95 rg 0 0 595 842 re f\n";
-    stream += "0.88 0.02 0 rg 0 790 595 52 re f\n";
-    stream += pdfText("RACE ENGINEERING HUB / F1 25", 42, 810, 9, "1 1 1");
-    stream += pdfText(pageIndex === 0 ? "ASSETTO COMPLETO" : "ASSETTO COMPLETO / CONTINUA", 42, 760, 22, "0.08 0.08 0.10");
-    stream += pdfText(track.name, 42, 736, 14, "0.25 0.25 0.28");
-    stream += pdfText(`${setupLabels[profile.session]} / ${setupLabels[profile.weather]} / Pista ${profile.trackTemp} C`, 42, 716, 9, "0.42 0.42 0.46");
-    stream += "0.82 0.82 0.84 RG 42 700 m 553 700 l S\n";
+    let stream = pdfRect(0, 0, 595, 842, colors.background);
+    for(let x = 34; x <= 561; x += 32) stream += pdfLine(x, 64, x, 744, "0.055 0.055 0.072", 0.35);
+    for(let y = 64; y <= 744; y += 32) stream += pdfLine(34, y, 561, y, "0.055 0.055 0.072", 0.35);
 
-    let y = 670;
+    stream += pdfRect(0, 752, 595, 84, colors.surface);
+    stream += `${colors.red} rg 0 752 m 190 752 l 226 836 l 0 836 l h f\n`;
+    stream += pdfRect(0, 836, 190, 6, colors.red);
+    stream += pdfRect(190, 836, 28, 6, "1 1 1");
+    stream += pdfRect(218, 836, 377, 6, colors.red);
+    stream += pdfText("RACE ENGINEERING", 34, 792, 26, "1 1 1", "F2");
+    stream += pdfText("F1 25 PERFORMANCE HUB", 36, 770, 8, "1 1 1", "F3");
+    stream += pdfText("SETUP LAB / 02", 425, 806, 9, colors.red, "F3");
+    stream += pdfText(`REPORT ${String(pageIndex + 1).padStart(2, "0")} / ${String(sectionGroups.length).padStart(2, "0")}`, 425, 784, 8, colors.muted, "F3");
+
+    stream += pdfText(pageIndex === 0 ? "ASSETTO COMPLETO" : "ASSETTO / CONTINUA", 34, 713, 25, colors.text, "F2");
+    stream += pdfText(track.name.toUpperCase(), 34, 687, 14, colors.red, "F3");
+    stream += pdfLine(34, 671, 561, 671, colors.line, 0.8);
+
+    const metadata = [
+      ["SESSIONE", setupLabels[profile.session]],
+      ["CONDIZIONI", setupLabels[profile.weather]],
+      ["PISTA", `${profile.trackTemp} C`]
+    ];
+    metadata.forEach(([label, value], index) => {
+      const x = 34 + index * 178;
+      stream += pdfRect(x, 617, 171, 40, "0.071 0.071 0.090");
+      stream += pdfStrokeRect(x, 617, 171, 40, "0.16 0.16 0.20", 0.6);
+      stream += pdfText(label, x + 11, 642, 6.5, colors.muted, "F3");
+      stream += pdfText(value, x + 11, 626, 9.5, colors.text, "F2");
+    });
+
+    let y = 596;
     for(const [title, items] of sections){
-      stream += "0.10 0.10 0.12 rg 42 " + (y - 5) + " 511 24 re f\n";
-      stream += pdfText(title, 52, y + 3, 10, "1 1 1");
-      y -= 34;
-      for(const [label, value] of items){
-        stream += "0.88 0.88 0.89 RG 42 " + (y - 7) + " m 553 " + (y - 7) + " l S\n";
-        stream += pdfText(label, 52, y + 2, 9, "0.28 0.28 0.31");
-        stream += pdfText(value, 470, y + 2, 12, "0.88 0.02 0");
-        y -= 28;
-      }
-      y -= 14;
+      const rendered = pdfSetupSection(title, items, y);
+      stream += rendered.stream;
+      y = rendered.nextY;
     }
 
-    stream += pdfText(`Pagina ${pageIndex + 1} di ${sectionGroups.length}`, 42, 28, 8, "0.48 0.48 0.52");
-    stream += pdfText("Valori ordinati come nel menu Assetto personalizzato di F1 25.", 300, 28, 8, "0.48 0.48 0.52");
+    stream += pdfLine(34, 50, 561, 50, colors.line, 0.7);
+    stream += pdfRect(34, 25, 4, 13, colors.red);
+    stream += pdfText("VALORI ORDINATI COME NEL MENU ASSETTO PERSONALIZZATO DI F1 25", 47, 29, 6.8, colors.muted, "F3");
+    stream += pdfText(`${String(pageIndex + 1).padStart(2, "0")} / ${String(sectionGroups.length).padStart(2, "0")}`, 521, 29, 7.5, colors.text, "F3");
     return stream;
   });
 
   const objects = [];
   objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
   objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+  objects[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
+  objects[5] = "<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>";
   const pageReferences = [];
 
   pageStreams.forEach((stream, index) => {
-    const pageObject = 4 + index * 2;
+    const pageObject = 6 + index * 2;
     const streamObject = pageObject + 1;
     pageReferences.push(`${pageObject} 0 R`);
-    objects[pageObject] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${streamObject} 0 R >>`;
+    objects[pageObject] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents ${streamObject} 0 R >>`;
     objects[streamObject] = `<< /Length ${stream.length} >>\nstream\n${stream}endstream`;
   });
   objects[2] = `<< /Type /Pages /Kids [${pageReferences.join(" ")}] /Count ${pageReferences.length} >>`;
