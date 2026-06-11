@@ -10,6 +10,7 @@ Applicazione web statica per preparare una strategia di gara e generare un asset
 - Bridge opzionale per calibrare la strategia con vita utile, usura, delta e set gomme trasmessi dalla telemetria UDP ufficiale di F1 25
 - Setup Lab che richiede soltanto dati mostrati da F1 25
 - Foglio assetto nello stesso ordine delle sezioni del gioco
+- Esportazione PDF dell'assetto completo
 - Layout responsive per desktop e smartphone
 
 ## Utilizzo

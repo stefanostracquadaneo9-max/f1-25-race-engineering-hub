@@ -305,22 +305,131 @@ function setupRationale(track, profile){
   ];
 }
 
-function copySetupToClipboard(setup, trackName){
-  const text = [
-    `ASSETTO F1 25 - ${trackName}`,
-    `Aero: ${setup.frontWing} / ${setup.rearWing}`,
-    `Differenziale: ${setup.diffOn}% / ${setup.diffOff}% | Freno motore: ${setup.engineBrake}%`,
-    `Camber: ${setup.frontCamber} / ${setup.rearCamber} | Toe: ${setup.frontToe} / ${setup.rearToe}`,
-    `Sospensioni: ${setup.frontSusp} / ${setup.rearSusp} | Barre: ${setup.frontARB} / ${setup.rearARB}`,
-    `Altezze: ${setup.frontHeight} / ${setup.rearHeight}`,
-    `Freni: ${setup.brakePressure}% / ${setup.brakeBias}%`,
-    `Pressioni: AD ${setup.frontRightPressure}, AS ${setup.frontLeftPressure}, PD ${setup.rearRightPressure}, PS ${setup.rearLeftPressure} psi`
-  ].join("\n");
+function setupPdfSections(setup){
+  return [
+    ["01 / AERODINAMICA", [
+      ["Aerodinamica ala anteriore", setup.frontWing],
+      ["Aerodinamica ala posteriore", setup.rearWing]
+    ]],
+    ["02 / TRASMISSIONE", [
+      ["Regolazione differenziale acceleratore", `${setup.diffOn}%`],
+      ["Regolazione differenziale rilascio acceleratore", `${setup.diffOff}%`],
+      ["Freno motore", `${setup.engineBrake}%`]
+    ]],
+    ["03 / GEOMETRIA SOSPENSIONI", [
+      ["Campanatura anteriore", `${setup.frontCamber} gradi`],
+      ["Campanatura posteriore", `${setup.rearCamber} gradi`],
+      ["Convergenza anteriore", `${setup.frontToe} gradi`],
+      ["Convergenza posteriore", `${setup.rearToe} gradi`]
+    ]],
+    ["04 / SOSPENSIONI", [
+      ["Sospensioni anteriori", setup.frontSusp],
+      ["Sospensioni posteriori", setup.rearSusp],
+      ["Barra antirollio anteriore", setup.frontARB],
+      ["Barra antirollio posteriore", setup.rearARB],
+      ["Altezza da terra anteriore", setup.frontHeight],
+      ["Altezza da terra posteriore", setup.rearHeight]
+    ]],
+    ["05 / FRENI", [
+      ["Pressione freni", `${setup.brakePressure}%`],
+      ["Bilanciamento freni anteriore", `${setup.brakeBias}%`]
+    ]],
+    ["06 / PRESSIONE PNEUMATICI", [
+      ["Pressione pneumatico anteriore destro", `${setup.frontRightPressure} psi`],
+      ["Pressione pneumatico anteriore sinistro", `${setup.frontLeftPressure} psi`],
+      ["Pressione pneumatico posteriore destro", `${setup.rearRightPressure} psi`],
+      ["Pressione pneumatico posteriore sinistro", `${setup.rearLeftPressure} psi`]
+    ]]
+  ];
+}
 
-  if(!navigator.clipboard || typeof navigator.clipboard.writeText !== "function"){
-    return Promise.reject(new Error("Clipboard API non disponibile"));
+function pdfSafeText(value){
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function pdfText(text, x, y, size, color = "0 0 0"){
+  return `BT /F1 ${size} Tf ${color} rg 1 0 0 1 ${x} ${y} Tm (${pdfSafeText(text)}) Tj ET\n`;
+}
+
+function createSetupPdfBlob(setup, track, profile){
+  const sectionGroups = [
+    setupPdfSections(setup).slice(0, 3),
+    setupPdfSections(setup).slice(3)
+  ];
+  const pageStreams = sectionGroups.map((sections, pageIndex) => {
+    let stream = "0.94 0.94 0.95 rg 0 0 595 842 re f\n";
+    stream += "0.88 0.02 0 rg 0 790 595 52 re f\n";
+    stream += pdfText("RACE ENGINEERING HUB / F1 25", 42, 810, 9, "1 1 1");
+    stream += pdfText(pageIndex === 0 ? "ASSETTO COMPLETO" : "ASSETTO COMPLETO / CONTINUA", 42, 760, 22, "0.08 0.08 0.10");
+    stream += pdfText(track.name, 42, 736, 14, "0.25 0.25 0.28");
+    stream += pdfText(`${setupLabels[profile.session]} / ${setupLabels[profile.weather]} / Pista ${profile.trackTemp} C`, 42, 716, 9, "0.42 0.42 0.46");
+    stream += "0.82 0.82 0.84 RG 42 700 m 553 700 l S\n";
+
+    let y = 670;
+    for(const [title, items] of sections){
+      stream += "0.10 0.10 0.12 rg 42 " + (y - 5) + " 511 24 re f\n";
+      stream += pdfText(title, 52, y + 3, 10, "1 1 1");
+      y -= 34;
+      for(const [label, value] of items){
+        stream += "0.88 0.88 0.89 RG 42 " + (y - 7) + " m 553 " + (y - 7) + " l S\n";
+        stream += pdfText(label, 52, y + 2, 9, "0.28 0.28 0.31");
+        stream += pdfText(value, 470, y + 2, 12, "0.88 0.02 0");
+        y -= 28;
+      }
+      y -= 14;
+    }
+
+    stream += pdfText(`Pagina ${pageIndex + 1} di ${sectionGroups.length}`, 42, 28, 8, "0.48 0.48 0.52");
+    stream += pdfText("Valori ordinati come nel menu Assetto personalizzato di F1 25.", 300, 28, 8, "0.48 0.48 0.52");
+    return stream;
+  });
+
+  const objects = [];
+  objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+  const pageReferences = [];
+
+  pageStreams.forEach((stream, index) => {
+    const pageObject = 4 + index * 2;
+    const streamObject = pageObject + 1;
+    pageReferences.push(`${pageObject} 0 R`);
+    objects[pageObject] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${streamObject} 0 R >>`;
+    objects[streamObject] = `<< /Length ${stream.length} >>\nstream\n${stream}endstream`;
+  });
+  objects[2] = `<< /Type /Pages /Kids [${pageReferences.join(" ")}] /Count ${pageReferences.length} >>`;
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for(let index = 1; index < objects.length; index++){
+    offsets[index] = pdf.length;
+    pdf += `${index} 0 obj\n${objects[index]}\nendobj\n`;
   }
-  return navigator.clipboard.writeText(text);
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for(let index = 1; index < objects.length; index++){
+    pdf += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return new Blob([pdf], {type:"application/pdf"});
+}
+
+function downloadSetupPdf(setup, track, profile){
+  const blob = createSetupPdfBlob(setup, track, profile);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const filename = track.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  link.href = url;
+  link.download = `assetto-f1-25-${filename}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function calculateSetup(){
@@ -364,7 +473,7 @@ function calculateSetup(){
         <h2>${track.name}</h2>
         <p>${setupLabels[profile.session]} · ${setupLabels[profile.weather]} · ${profile.trackTemp} °C</p>
       </div>
-      <button class="copy-button" id="copySetupBtn" type="button">Copia valori</button>
+      <button class="download-button" id="downloadSetupPdfBtn" type="button">Scarica PDF assetto</button>
     </div>
 
     <div class="result-dashboard">
@@ -408,13 +517,10 @@ function calculateSetup(){
     <p class="result-disclaimer">Il modello genera una base tecnica coerente con F1 25. Stile personale, aggiornamenti del gioco e comportamento della singola vettura possono richiedere una rifinitura.</p>
   `;
 
-  document.getElementById("copySetupBtn").addEventListener("click", event => {
-    copySetupToClipboard(result.setup, track.name).then(() => {
-      event.currentTarget.textContent = "Valori copiati";
-      setTimeout(() => { event.currentTarget.textContent = "Copia valori"; }, 1800);
-    }).catch(() => {
-      event.currentTarget.textContent = "Copia non disponibile";
-    });
+  document.getElementById("downloadSetupPdfBtn").addEventListener("click", event => {
+    downloadSetupPdf(result.setup, track, profile);
+    event.currentTarget.textContent = "PDF scaricato";
+    setTimeout(() => { event.currentTarget.textContent = "Scarica PDF assetto"; }, 1800);
   });
 
   output.scrollIntoView({behavior: "smooth", block: "start"});

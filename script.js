@@ -500,28 +500,10 @@ function strategyPlanName(plan, index){
   return "Alternativa";
 }
 
-function selectDiversePlans(candidates, context){
+function selectBestPlans(candidates, context){
   const sorted = candidates.filter(Boolean).sort((a, b) => a.score - b.score);
   if(!sorted.length) return [];
-  const selected = [sorted[0]];
-
-  for(const candidate of sorted.slice(1)){
-    const duplicate = selected.some(plan =>
-      plan.pits.length === candidate.pits.length &&
-      plan.tyres[0] === candidate.tyres[0] &&
-      plan.tyres.join("-") === candidate.tyres.join("-")
-    );
-    const addsChoice = selected.some(plan =>
-      plan.pits.length !== candidate.pits.length || plan.tyres[0] !== candidate.tyres[0]
-    );
-    if(!duplicate && addsChoice) selected.push(candidate);
-    if(selected.length === 3) break;
-  }
-
-  for(const candidate of sorted){
-    if(selected.length === 3) break;
-    if(!selected.includes(candidate)) selected.push(candidate);
-  }
+  const selected = sorted.slice(0, 3);
 
   const reference = selected[0].score;
   return selected.map((plan, index) => ({
@@ -540,7 +522,7 @@ function buildDryRaceStrategies(track, laps, wear, startPos, aiDifficulty, strat
 
   if(sessionType === "sprint"){
     const candidates = [["soft"],["medium"],["hard"]].map(sequence => optimizeSequence(sequence, laps, context));
-    const bestNoStop = selectDiversePlans(candidates, context);
+    const bestNoStop = selectBestPlans(candidates, context);
     return bestNoStop.map((plan, index) => ({
       ...plan,
       name:index === 0 ? "Sprint consigliata" : plan.tyres[0] === "soft" ? "Sprint attacco" : "Sprint gestione"
@@ -548,7 +530,7 @@ function buildDryRaceStrategies(track, laps, wear, startPos, aiDifficulty, strat
   }
 
   if(laps <= 5){
-    return selectDiversePlans([["soft"],["medium"],["hard"]].map(sequence => optimizeSequence(sequence, laps, context)), context);
+    return selectBestPlans([["soft"],["medium"],["hard"]].map(sequence => optimizeSequence(sequence, laps, context)), context);
   }
 
   const oneStop = [
@@ -573,7 +555,7 @@ function buildDryRaceStrategies(track, laps, wear, startPos, aiDifficulty, strat
     );
   }
 
-  return selectDiversePlans(sequences.filter(sequenceAvailable).map(sequence => optimizeSequence(sequence, laps, context)), context);
+  return selectBestPlans(sequences.filter(sequenceAvailable).map(sequence => optimizeSequence(sequence, laps, context)), context);
 }
 
 function dryTyreForWeatherSegment(length, track, wear, driverStyle, profile){
