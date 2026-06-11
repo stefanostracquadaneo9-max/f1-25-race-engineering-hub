@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Setup Lab per F1 25: calcolo professionale dell'assetto completo.">
+  <title>Setup Lab | F1 25</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+  <link rel="icon" type="image/jpeg" href="favicon.jpg">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-stripe"></div>
+    <div class="header-inner">
+      <a class="brand" href="index.html" aria-label="Race Engineering Hub">
+        <figure class="header-favicon">
+          <img src="favicon.jpg" alt="">
+        </figure>
+        <span class="brand-copy">
+          <strong>Race Engineering</strong>
+          <small>F1 25 Performance Hub</small>
+        </span>
+      </a>
+
+      <nav class="main-nav" aria-label="Navigazione principale">
+        <a class="nav-link" href="index.html">
+          <span>00</span> Home
+        </a>
+        <a class="nav-link" href="ferrari_strategy_setup_engineer_f1_25.html">
+          <span>01</span> Strategia
+        </a>
+        <a class="nav-link active" href="assetto.html" aria-current="page">
+          <span>02</span> Assetto
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container page-shell">
+    <section class="page-hero setup-hero">
+      <div>
+        <p class="eyebrow">Vehicle performance / Setup lab</p>
+        <h1>Calcola un assetto completo per F1 25.</h1>
+        <p class="hero-copy">Inserisci soltanto i dati mostrati da F1 25. Il risultato segue lo stesso ordine delle schermate dell'assetto, pronto da trascrivere.</p>
+      </div>
+      <div class="hero-status" aria-label="Stato del modello">
+        <span class="status-dot"></span>
+        <div>
+          <small>Setup model</small>
+          <strong>21 parametri calibrati</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="model-note">
+      <span class="note-code">MODEL / F1-25</span>
+      <p>Servono solo circuito, sessione, meteo e temperatura pista: tutte informazioni disponibili direttamente in F1 25.</p>
+    </section>
+
+    <section class="workspace-heading">
+      <div>
+        <p class="section-kicker">Questionario tecnico</p>
+        <h2>Profilo completo dell'assetto</h2>
+      </div>
+      <span class="completion-label"><strong>4</strong> dati mostrati da F1 25</span>
+    </section>
+
+    <div class="setup-form-grid setup-game-inputs">
+      <section class="card setup-form-card">
+        <div class="card-title"><em class="step">01</em> Informazioni sessione</div>
+        <p class="card-intro">Seleziona le informazioni visibili nel menu della sessione di F1 25.</p>
+
+        <div class="field">
+          <label for="setupTrack">Circuito</label>
+          <select id="setupTrack">
+            <option value="">Seleziona circuito</option>
+            <option value="bahrain">Bahrain</option>
+            <option value="saudi">Arabia Saudita</option>
+            <option value="australia">Australia</option>
+            <option value="japan">Giappone</option>
+            <option value="china">Cina</option>
+            <option value="miami">Miami</option>
+            <option value="imola">Imola</option>
+            <option value="monaco">Monaco</option>
+            <option value="canada">Canada</option>
+            <option value="spain">Spagna</option>
+            <option value="austria">Austria</option>
+            <option value="silverstone">Gran Bretagna</option>
+            <option value="belgium">Belgio</option>
+            <option value="hungary">Ungheria</option>
+            <option value="netherlands">Olanda</option>
+            <option value="monza">Monza</option>
+            <option value="baku">Azerbaijan</option>
+            <option value="singapore">Singapore</option>
+            <option value="usa">USA</option>
+            <option value="mexico">Messico</option>
+            <option value="brazil">Brasile</option>
+            <option value="lasvegas">Las Vegas</option>
+            <option value="qatar">Qatar</option>
+            <option value="abudhabi">Abu Dhabi</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="setupSession">Sessione</label>
+          <select id="setupSession">
+            <option value="">Seleziona sessione</option>
+            <option value="timeTrial">Prova a tempo</option>
+            <option value="qualifying">Qualifica</option>
+            <option value="sprint">Sprint</option>
+            <option value="race">Gara</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="card setup-form-card">
+        <div class="card-title"><em class="step">02</em> Condizioni sessione</div>
+        <p class="card-intro">Usa il meteo previsto e la temperatura pista mostrati da F1 25.</p>
+
+        <div class="field">
+          <label for="setupWeather">Condizioni meteo</label>
+          <select id="setupWeather">
+            <option value="">Seleziona condizioni</option>
+            <option value="dry">Asciutto</option>
+            <option value="damp">Pioggia leggera / intermedie</option>
+            <option value="wet">Pioggia intensa / full wet</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="setupTrackTemp">Temperatura pista <span class="label-note">10-60 °C</span></label>
+          <div class="range-control">
+            <input type="range" id="setupTrackTemp" min="10" max="60" value="32">
+            <output id="setupTrackTempValue" for="setupTrackTemp">32 °C</output>
+          </div>
+        </div>
+
+      </section>
+    </div>
+
+    <div class="cta-row">
+      <button class="btn-calculate" id="calculateSetupBtn" type="button">
+        <span>Calcola assetto completo</span>
+        <small>Genera valori, motivazioni e piano di verifica</small>
+      </button>
+    </div>
+
+    <section id="setupOutput" class="setup-output" aria-live="polite">
+      <div class="empty-state">
+        <span class="empty-index">SET / 02</span>
+        <strong>Il foglio assetto apparirà qui.</strong>
+        <p>Compila tutti gli input tecnici per generare una configurazione completa.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    Race Engineering Hub per F1 25. I valori sono una base tecnica da validare con alcuni giri di prova.
+  </footer>
+  <script src="script.js" defer></script>
+  <script src="assetto.js" defer></script>
+</body>
+</html>

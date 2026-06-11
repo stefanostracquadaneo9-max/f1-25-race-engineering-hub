@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Race Strategy Engineer per F1 25: strategia, meteo e gestione stint.">
+  <title>Race Strategy Engineer | F1 25</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+  <link rel="icon" type="image/jpeg" href="favicon.jpg">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-stripe"></div>
+    <div class="header-inner">
+      <a class="brand" href="index.html" aria-label="Race Engineering Hub">
+        <figure class="header-favicon">
+          <img src="favicon.jpg" alt="">
+        </figure>
+        <span class="brand-copy">
+          <strong>Race Engineering</strong>
+          <small>F1 25 Performance Hub</small>
+        </span>
+      </a>
+
+      <nav class="main-nav" aria-label="Navigazione principale">
+        <a class="nav-link" href="index.html">
+          <span>00</span> Home
+        </a>
+        <a class="nav-link active" href="ferrari_strategy_setup_engineer_f1_25.html" aria-current="page">
+          <span>01</span> Strategia
+        </a>
+        <a class="nav-link" href="assetto.html">
+          <span>02</span> Assetto
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container page-shell">
+    <section class="page-hero">
+      <div>
+        <p class="eyebrow">Race operations / Strategy desk</p>
+        <h1>Costruisci una strategia di gara completa.</h1>
+        <p class="hero-copy">Analizza circuito, sessione, degrado e otto finestre meteo per ottenere stint, pit stop e chiamate operative coerenti.</p>
+      </div>
+      <div class="hero-status" aria-label="Stato del modello">
+        <span class="status-dot"></span>
+        <div>
+          <small>Modello strategico</small>
+          <strong>Pronto al calcolo</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="workspace-heading">
+      <div>
+        <p class="section-kicker">Input strategia</p>
+        <h2>Dati della sessione</h2>
+      </div>
+      <a class="text-link" href="assetto.html">Cerchi il calcolo dell'assetto? Apri Setup Lab</a>
+    </section>
+
+    <div class="input-grid strategy-grid">
+      <section class="card">
+        <div class="card-title"><em class="step">01</em> Dati gara</div>
+        <p class="card-intro">Definisci circuito, distanza e livello degli avversari.</p>
+
+        <div class="field">
+          <label for="track">Circuito</label>
+          <select id="track">
+            <option value="">Seleziona circuito</option>
+            <option value="bahrain">Bahrain</option>
+            <option value="saudi">Arabia Saudita</option>
+            <option value="australia">Australia</option>
+            <option value="japan">Giappone</option>
+            <option value="china">Cina</option>
+            <option value="miami">Miami</option>
+            <option value="imola">Imola</option>
+            <option value="monaco">Monaco</option>
+            <option value="canada">Canada</option>
+            <option value="spain">Spagna</option>
+            <option value="austria">Austria</option>
+            <option value="silverstone">Gran Bretagna</option>
+            <option value="belgium">Belgio</option>
+            <option value="hungary">Ungheria</option>
+            <option value="netherlands">Olanda</option>
+            <option value="monza">Monza</option>
+            <option value="baku">Azerbaijan</option>
+            <option value="singapore">Singapore</option>
+            <option value="usa">USA</option>
+            <option value="mexico">Messico</option>
+            <option value="brazil">Brasile</option>
+            <option value="lasvegas">Las Vegas</option>
+            <option value="qatar">Qatar</option>
+            <option value="abudhabi">Abu Dhabi</option>
+          </select>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="laps">Giri sessione</label>
+            <input type="number" id="laps" min="1" max="100" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label for="startPos">Posizione partenza</label>
+            <input type="number" id="startPos" min="1" max="22" inputmode="numeric">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="aiDifficulty">Difficoltà IA <span class="label-note">0-110</span></label>
+          <input type="number" id="aiDifficulty" min="0" max="110" inputmode="numeric">
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-title"><em class="step">02</em> Profilo strategico</div>
+        <p class="card-intro">Adatta il piano al tipo di sessione e al tuo modo di guidare.</p>
+
+        <div class="field">
+          <label for="sessionType">Sessione</label>
+          <select id="sessionType">
+            <option value="">Seleziona sessione</option>
+            <option value="sprintShootout">Qualifica Sprint</option>
+            <option value="sprint">Gara Sprint</option>
+            <option value="qualy">Qualifica GP</option>
+            <option value="race">Gara</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="driverStyle">Stile di guida</label>
+          <select id="driverStyle">
+            <option value="">Seleziona stile</option>
+            <option value="assisted">Stabile / prudente</option>
+            <option value="smooth">Fluido</option>
+            <option value="normal">Bilanciato</option>
+            <option value="aggressive">Aggressivo controllato</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="wear">Usura gomme</label>
+          <select id="wear">
+            <option value="">Seleziona</option>
+            <option value="low">Bassa</option>
+            <option value="medium">Media</option>
+            <option value="high">Alta</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="strategyStyle">Approccio</label>
+          <select id="strategyStyle">
+            <option value="">Seleziona strategia</option>
+            <option value="balanced">Bilanciata</option>
+            <option value="aggressive">Aggressiva</option>
+            <option value="conservative">Conservativa</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="card weather-card">
+        <div class="card-title"><em class="step">03</em> Previsioni meteo</div>
+        <p class="card-intro">Replica gli otto riquadri del gioco, dall'inizio alla fine della sessione.</p>
+
+        <div class="weather-grid">
+          <div class="weather-cell"><label for="w1">Finestra 1</label><select id="w1"><option value="">Seleziona</option><option value="dry">Sole</option><option value="cloudy">Nuvoloso</option><option value="light_rain">Pioggia lieve</option><option value="rain">Pioggia</option><option value="heavy_rain">Pioggia forte</option></select></div>
+          <div class="weather-cell"><label for="w2">Finestra 2</label><select id="w2"><option value="">Seleziona</option><option value="dry">Sole</option><option value="cloudy">Nuvoloso</option><option value="light_rain">Pioggia lieve</option><option value="rain">Pioggia</option><option value="heavy_rain">Pioggia forte</option></select></div>
+          <div class="weather-cell"><label for="w3">Finestra 3</label><select id="w3"><option value="">Seleziona</option><option value="dry">Sole</option><option value="cloudy">Nuvoloso</option><option value="light_rain">Pioggia lieve</option><option value="rain">Pioggia</option><option value="heavy_rain">Pioggia forte</option></select></div>
+          <div class="weather-cell"><label for="w4">Finestra 4</label><select id="w4"><option value="">Seleziona</option><option value="dry">Sole</option><option value="cloudy">Nuvoloso</option><option value="light_rain">Pioggia lieve</option><option value="rain">Pioggia</option><option value="heavy_rain">Pioggia forte</option></select></div>
+          <div class="weather-cell"><label for="w5">Finestra 5</label><select id="w5"><option value="">Seleziona</option><option value="dry">Sole</option><option value="cloudy">Nuvoloso</option><option value="light_rain">Pioggia lieve</option><option value="rain">Pioggia</option><option value="heavy_rain">Pioggia forte</option></select></div>
+          <div class="weather-cell"><label for="w6">Finestra 6</label><select id="w6"><option value="">Seleziona</option><option value="dry">Sole</option><option value="cloudy">Nuvoloso</option><option value="light_rain">Pioggia lieve</option><option value="rain">Pioggia</option><option value="heavy_rain">Pioggia forte</option></select></div>
+          <div class="weather-cell"><label for="w7">Finestra 7</label><select id="w7"><option value="">Seleziona</option><option value="dry">Sole</option><option value="cloudy">Nuvoloso</option><option value="light_rain">Pioggia lieve</option><option value="rain">Pioggia</option><option value="heavy_rain">Pioggia forte</option></select></div>
+          <div class="weather-cell"><label for="w8">Finestra 8</label><select id="w8"><option value="">Seleziona</option><option value="dry">Sole</option><option value="cloudy">Nuvoloso</option><option value="light_rain">Pioggia lieve</option><option value="rain">Pioggia</option><option value="heavy_rain">Pioggia forte</option></select></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="cta-row">
+      <button class="btn-calculate" id="calculateBtn" type="button">
+        <span>Genera strategia</span>
+        <small>Calcola piano, stint e chiamate live</small>
+      </button>
+    </div>
+
+    <section id="output" aria-live="polite">
+      <div class="empty-state">
+        <span class="empty-index">STR / 01</span>
+        <strong>Il briefing strategico apparirà qui.</strong>
+        <p>Compila tutti i dati della sessione e avvia il calcolo.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    Race Engineering Hub per F1 25. Modello indipendente, non affiliato a EA Sports o Ferrari S.p.A.
+  </footer>
+  <script src="script.js" defer></script>
+</body>
+</html>
