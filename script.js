@@ -26,11 +26,11 @@ const tracks = {
 };
 
 const tyreBase = {
-  soft:   {name:"Soft",       cssClass:"tyre-soft",   life:18},
-  medium: {name:"Medium",     cssClass:"tyre-medium",  life:30},
-  hard:   {name:"Hard",       cssClass:"tyre-hard",    life:42},
-  inter:  {name:"Intermedie", cssClass:"tyre-inter",   life:28},
-  wet:    {name:"Full Wet",   cssClass:"tyre-wet",     life:35}
+  soft:   {name:"Soft",       cssClass:"tyre-soft",   lifeRatio:0.31, pace:0.00, degradation:0.060, warmup:0.10},
+  medium: {name:"Medium",     cssClass:"tyre-medium", lifeRatio:0.50, pace:0.42, degradation:0.038, warmup:0.35},
+  hard:   {name:"Hard",       cssClass:"tyre-hard",   lifeRatio:0.72, pace:0.82, degradation:0.025, warmup:1.10},
+  inter:  {name:"Intermedie", cssClass:"tyre-inter",  lifeRatio:0.52, pace:0.00, degradation:0.045, warmup:0.45},
+  wet:    {name:"Full Wet",   cssClass:"tyre-wet",    lifeRatio:0.62, pace:0.00, degradation:0.035, warmup:0.65}
 };
 
 /* -----------------------------------------------
@@ -114,14 +114,15 @@ function orderPlans(plans, strategyStyle, startPos){
 }
 
 function tyreLife(tyreKey, track, wear, driverStyle){
-  const base = tyreBase[tyreKey] ? tyreBase[tyreKey].life : 25;
-  let mod = (track.wearMod || 1.0) * 0.93;
-  if(wear === "low")    mod *= 0.85;
-  if(wear === "high")   mod *= 1.20;
-  if(driverStyle === "aggressive") mod *= 1.08;
-  if(driverStyle === "smooth")     mod *= 0.94;
-  if(driverStyle === "assisted")   mod *= 0.90;
-  return Math.round(base / mod);
+  const tyre = tyreBase[tyreKey] || tyreBase.medium;
+  const base = Math.max(8, track.laps * tyre.lifeRatio);
+  let wearFactor = track.wearMod || 1.0;
+  if(wear === "low") wearFactor *= 0.86;
+  if(wear === "high") wearFactor *= 1.18;
+  if(driverStyle === "aggressive") wearFactor *= 1.08;
+  if(driverStyle === "smooth") wearFactor *= 0.94;
+  if(driverStyle === "assisted") wearFactor *= 0.96;
+  return Math.max(5, Math.round(base / wearFactor));
 }
 
 function sessionAdvice(session, weather){
@@ -316,7 +317,7 @@ function analyzeWeatherBlocks(blocks, laps){
   const rainLap    = firstWet === -1 ? Math.round(laps * 0.50) : wetBlocks[0].range.start;
   const rainEndLap = lastWet  === -1 ? null : wetBlocks[wetBlocks.length-1].range.end;
 
-  return {weather, rainLevel, rainLap, rainEndLap, firstWet, lastWet, wetBlocks};
+  return {weather, rainLevel, rainLap, rainEndLap, firstWet, lastWet, wetBlocks, blocks};
 }
 
 function weatherWindowText(analysis, laps){
@@ -347,135 +348,326 @@ function tempSetupAdjustment(setup, trackTemp){
 /* -----------------------------------------------
    STRATEGY BUILDER
 ----------------------------------------------- */
-function buildStrategies(track, laps, weatherAnalysis, wear, startPos, aiDifficulty, strategyStyle, sessionType){
-  const ai  = aiProfile(aiDifficulty);
+function estimatedPitLoss(track){
+  let loss = 19.5 + (100 - track.speed) * 0.045 + track.downforce * 0.025;
+  if(track.passing === "bassissima") loss += 1.8;
+  if(track.type === "speed") loss -= 0.8;
+  return Number(clamp(loss, 18.0, 25.5).toFixed(1));
+}
+
+function strategyWearFactor(track, wear, driverStyle){
+  let factor = track.wearMod || 1;
+  if(wear === "low") factor *= 0.86;
+  if(wear === "high") factor *= 1.18;
+  if(driverStyle === "aggressive") factor *= 1.08;
+  if(driverStyle === "smooth") factor *= 0.94;
+  if(driverStyle === "assisted") factor *= 0.96;
+  return factor;
+}
+
+function stintTimeCost(tyreKey, length, context){
+  const tyre = tyreBase[tyreKey] || tyreBase.medium;
+  const life = tyreLife(tyreKey, context.track, context.wear, context.driverStyle);
+  const wearFactor = strategyWearFactor(context.track, context.wear, context.driverStyle);
+  const ageCost = tyre.degradation * wearFactor * length * Math.max(0, length - 1) / 2;
+  const ratio = length / Math.max(1, life);
+  const cliffCost = ratio > 0.88 ? Math.pow((ratio - 0.88) * 12, 2) * (tyreKey === "soft" ? 1.1 : 0.78) : 0;
+  const warmupCost = tyre.warmup * (context.trackTemp === "cold" ? 1.25 : 1);
+  return tyre.pace * length + ageCost + cliffCost + warmupCost;
+}
+
+function strategyBias(sequence, context){
+  const stops = sequence.length - 1;
+  const first = sequence[0];
+  const hasSoft = sequence.includes("soft");
+  let bias = 0;
+
+  if(context.startPos <= 5 && first === "hard") bias += 3.2;
+  if(context.startPos > 10 && first === "hard") bias -= 1.4;
+  if(context.startPos > 10 && first === "soft" && context.track.passing === "alta") bias -= 0.8;
+  if((context.track.passing === "bassa" || context.track.passing === "bassissima") && stops > 1) bias += 4.5;
+
+  if(context.strategyStyle === "aggressive"){
+    if(hasSoft) bias -= 1.8;
+    if(stops > 1) bias -= 0.9;
+  }
+  if(context.strategyStyle === "conservative"){
+    if(first === "hard" || first === "medium") bias -= 1.2;
+    if(stops > 1) bias += 3.5;
+    if(hasSoft) bias += 1.6;
+  }
+
+  if(context.wear === "high" && stops === 1) bias += 2.2;
+  if(context.wear === "low" && stops > 1) bias += 2.5;
+  if(context.track.wearMod < 0.96 && stops > 1) bias += 4.0;
+  return bias;
+}
+
+function optimizeSequence(sequence, laps, context){
+  const stintCount = sequence.length;
+  const memo = new Map();
+
+  function solve(index, remaining){
+    const key = index + ":" + remaining;
+    if(memo.has(key)) return memo.get(key);
+    if(index === stintCount - 1){
+      if(remaining < 1) return null;
+      const result = {cost:stintTimeCost(sequence[index], remaining, context), lengths:[remaining]};
+      memo.set(key, result);
+      return result;
+    }
+
+    const remainingStints = stintCount - index - 1;
+    let best = null;
+    for(let length = 2; length <= remaining - remainingStints * 2; length++){
+      const tail = solve(index + 1, remaining - length);
+      if(!tail) continue;
+      const cost = stintTimeCost(sequence[index], length, context) + context.pitLoss + tail.cost;
+      if(!best || cost < best.cost) best = {cost, lengths:[length, ...tail.lengths]};
+    }
+    memo.set(key, best);
+    return best;
+  }
+
+  const optimized = solve(0, laps);
+  if(!optimized) return null;
+
+  let total = 0;
+  const pits = [];
+  for(let i = 0; i < optimized.lengths.length - 1; i++){
+    total += optimized.lengths[i];
+    pits.push(total);
+  }
+
+  const adjustedScore = optimized.cost + strategyBias(sequence, context);
+  const windows = pits.map((pit, index) => {
+    const tyre = sequence[index];
+    const spread = tyre === "soft" ? 2 : 3;
+    return [Math.max(1, pit - spread), Math.min(laps - 1, pit + spread)];
+  });
+
+  return {
+    tyres:[...sequence],
+    pits,
+    windows,
+    lengths:optimized.lengths,
+    rawScore:optimized.cost,
+    score:adjustedScore
+  };
+}
+
+function sequenceReason(plan, context){
+  const stops = plan.pits.length;
+  const first = plan.tyres[0];
+  if(stops === 0) return "Nessuna sosta prevista: priorità alla posizione in pista.";
+  if(first === "hard") return "Primo stint lungo per guadagnare flessibilità e sfruttare Safety Car o aria libera.";
+  if(first === "soft") return "Partenza aggressiva e finestra undercut anticipata.";
+  if(stops > 1) return "Stint più corti per mantenere passo e temperature sotto controllo.";
+  if(context.track.passing === "bassa" || context.track.passing === "bassissima") return "Una sola sosta per proteggere la posizione in pista.";
+  return "Miglior compromesso stimato tra passo, degrado e tempo perso ai box.";
+}
+
+function strategyPlanName(plan, index){
+  if(index === 0) return "Strategia consigliata";
+  if(plan.tyres[0] === "hard") return "Alternativa lunga";
+  if(plan.tyres.includes("soft")) return "Attacco / undercut";
+  if(plan.pits.length === 1) return "Track position";
+  return "Alternativa";
+}
+
+function selectDiversePlans(candidates, context){
+  const sorted = candidates.filter(Boolean).sort((a, b) => a.score - b.score);
+  if(!sorted.length) return [];
+  const selected = [sorted[0]];
+
+  for(const candidate of sorted.slice(1)){
+    const duplicate = selected.some(plan =>
+      plan.pits.length === candidate.pits.length &&
+      plan.tyres[0] === candidate.tyres[0] &&
+      plan.tyres.join("-") === candidate.tyres.join("-")
+    );
+    const addsChoice = selected.some(plan =>
+      plan.pits.length !== candidate.pits.length || plan.tyres[0] !== candidate.tyres[0]
+    );
+    if(!duplicate && addsChoice) selected.push(candidate);
+    if(selected.length === 3) break;
+  }
+
+  for(const candidate of sorted){
+    if(selected.length === 3) break;
+    if(!selected.includes(candidate)) selected.push(candidate);
+  }
+
+  const reference = selected[0].score;
+  return selected.map((plan, index) => ({
+    ...plan,
+    name:strategyPlanName(plan, index),
+    delta:Number(Math.max(0, plan.score - reference).toFixed(1)),
+    reason:sequenceReason(plan, context)
+  }));
+}
+
+function buildDryRaceStrategies(track, laps, wear, startPos, aiDifficulty, strategyStyle, driverStyle, sessionType){
+  const context = {
+    track, wear, startPos, aiDifficulty, strategyStyle, driverStyle,
+    pitLoss:estimatedPitLoss(track)
+  };
+
+  if(sessionType === "sprint"){
+    const candidates = [["soft"],["medium"],["hard"]].map(sequence => optimizeSequence(sequence, laps, context));
+    const bestNoStop = selectDiversePlans(candidates, context);
+    return bestNoStop.map((plan, index) => ({
+      ...plan,
+      name:index === 0 ? "Sprint consigliata" : plan.tyres[0] === "soft" ? "Sprint attacco" : "Sprint gestione"
+    }));
+  }
+
+  if(laps <= 5){
+    return selectDiversePlans([["soft"],["medium"],["hard"]].map(sequence => optimizeSequence(sequence, laps, context)), context);
+  }
+
+  const oneStop = [
+    ["soft","medium"],["medium","soft"],["soft","hard"],
+    ["hard","soft"],["medium","hard"],["hard","medium"]
+  ];
+  const twoStop = [
+    ["soft","medium","soft"],["medium","soft","medium"],["medium","hard","medium"],
+    ["hard","medium","hard"],["soft","medium","hard"],["medium","hard","soft"],
+    ["hard","medium","soft"],["soft","hard","soft"],["soft","hard","medium"],
+    ["hard","soft","medium"]
+  ];
+  const distanceRatio = laps / Math.max(1, track.laps);
+  const highStress = strategyWearFactor(track, wear, driverStyle) > 1.20;
+  const sequences = [...oneStop, ...twoStop];
+
+  if(distanceRatio > 0.82 && highStress){
+    sequences.push(
+      ["soft","medium","medium","soft"],
+      ["medium","hard","medium","soft"],
+      ["soft","medium","hard","soft"]
+    );
+  }
+
+  return selectDiversePlans(sequences.map(sequence => optimizeSequence(sequence, laps, context)), context);
+}
+
+function dryTyreForWeatherSegment(length, track, wear, driverStyle, profile){
+  const softLife = tyreLife("soft", track, wear, driverStyle);
+  const mediumLife = tyreLife("medium", track, wear, driverStyle);
+  if(profile === "attack") return length <= softLife * 1.05 ? "soft" : "medium";
+  if(profile === "safe") return length <= mediumLife * 0.82 ? "medium" : "hard";
+  if(length <= softLife * 0.72) return "soft";
+  if(length <= mediumLife * 1.02) return "medium";
+  return "hard";
+}
+
+function weatherTyreForBlock(weather, profile){
+  if(weather === "heavy_rain") return "wet";
+  if(weather === "rain") return profile === "safe" ? "wet" : "inter";
+  if(weather === "light_rain") return "inter";
+  return null;
+}
+
+function buildWeatherPlan(track, laps, analysis, wear, driverStyle, profile){
+  const timeline = new Array(laps).fill(null);
+  const blocks = analysis.blocks || [];
+
+  for(let index = 0; index < blocks.length; index++){
+    const range = blockLapRange(index, laps);
+    const wetTyreKey = weatherTyreForBlock(blocks[index], profile);
+    for(let lap = range.start; lap <= range.end; lap++) timeline[lap - 1] = wetTyreKey;
+  }
+
+  let cursor = 0;
+  while(cursor < laps){
+    if(timeline[cursor]){
+      cursor++;
+      continue;
+    }
+    const start = cursor;
+    while(cursor < laps && !timeline[cursor]) cursor++;
+    const length = cursor - start;
+    const dryTyre = dryTyreForWeatherSegment(length, track, wear, driverStyle, profile);
+    for(let lap = start; lap < cursor; lap++) timeline[lap] = dryTyre;
+  }
+
+  const tyres = [];
+  const lengths = [];
+  for(const tyre of timeline){
+    if(tyres[tyres.length - 1] === tyre) lengths[lengths.length - 1]++;
+    else {
+      tyres.push(tyre);
+      lengths.push(1);
+    }
+  }
+
+  const expandedTyres = [];
+  const expandedLengths = [];
+  for(let index = 0; index < tyres.length; index++){
+    const tyre = tyres[index];
+    const length = lengths[index];
+    const life = tyreLife(tyre, track, wear, driverStyle);
+    const stints = Math.max(1, Math.ceil(length / Math.max(5, life * 1.08)));
+    let remaining = length;
+    for(let stint = 0; stint < stints; stint++){
+      const stintLength = Math.round(remaining / (stints - stint));
+      expandedTyres.push(tyre);
+      expandedLengths.push(stintLength);
+      remaining -= stintLength;
+    }
+  }
+
+  const pits = [];
+  let total = 0;
+  for(let index = 0; index < expandedLengths.length - 1; index++){
+    total += expandedLengths[index];
+    const transition = expandedTyres[index] !== expandedTyres[index + 1];
+    const bias = transition ? (profile === "safe" ? -1 : profile === "attack" ? 1 : 0) : 0;
+    pits.push(clamp(total + bias, 1, laps - 1));
+  }
+
+  const windows = pits.map((pit, index) => {
+    const transition = expandedTyres[index] !== expandedTyres[index + 1];
+    return transition ? [Math.max(1, pit - 1), Math.min(laps - 1, pit + 1)] : [Math.max(1, pit - 2), Math.min(laps - 1, pit + 2)];
+  });
+
+  const profileCost = profile === "balanced" ? 0 : profile === "safe" ? 2.4 : 1.6;
+  return {
+    tyres:expandedTyres,
+    lengths:expandedLengths,
+    pits,
+    windows,
+    score:pits.length * estimatedPitLoss(track) + profileCost,
+    name:profile === "balanced" ? "Strategia meteo consigliata" : profile === "safe" ? "Crossover prudente" : "Crossover aggressivo",
+    reason:profile === "balanced"
+      ? "Segue i punti di crossover previsti tra slick, intermedie e full wet."
+      : profile === "safe"
+        ? "Anticipa la gomma da bagnato per ridurre il rischio quando il grip cala."
+        : "Ritarda il cambio per sfruttare più a lungo la mescola più veloce.",
+    delta:profileCost
+  };
+}
+
+function buildStrategies(track, laps, weatherAnalysis, wear, startPos, aiDifficulty, strategyStyle, sessionType, driverStyle = "normal"){
   const weather = weatherAnalysis.weather;
-  const rainLap = weatherAnalysis.rainLap;
-  const rainEndLap = weatherAnalysis.rainEndLap;
-  const rainLevel = weatherAnalysis.rainLevel;
-  const wet = wetTyre(rainLevel);
-  let plans = [];
-  const backToDryPit = rainEndLap && rainEndLap < laps ? rainEndLap : null;
+  const wet = wetTyre(weatherAnalysis.rainLevel);
 
   if(isQualifyingSession(sessionType)){
     const qualyTyre = weather === "dry" ? "soft" : wet;
-    plans = [
-      {name:"Run principale", tyres:[qualyTyre], pits:[]},
-      {name:"Run sicurezza", tyres:[qualyTyre], pits:[]},
-      {name:"Backup meteo", tyres:[weather === "dry" ? "soft" : wet], pits:[]}
+    return [
+      {name:"Run principale", tyres:[qualyTyre], pits:[], windows:[], delta:0, reason:"Gomma nuova e pista libera per il giro push."},
+      {name:"Secondo tentativo", tyres:[qualyTyre], pits:[], windows:[], delta:0, reason:"Conserva un secondo set per l'evoluzione della pista."},
+      {name:"Backup meteo", tyres:[weather === "dry" ? "soft" : wet], pits:[], windows:[], delta:0, reason:"Esci prima del cambio condizioni previsto."}
     ];
-    return orderPlans(normalizePlans(plans, laps), strategyStyle, startPos);
-  }
-
-  if(sessionType === "sprint"){
-    const dryTyre = wear === "high" || track.wearMod > 1.18 ? "medium" : "soft";
-
-    if(weather === "dry"){
-      plans = [
-        {name:"Sprint principale", tyres:[dryTyre], pits:[]},
-        {name:"Gestione", tyres:["medium"], pits:[]},
-        {name:"Attacco", tyres:["soft"], pits:[]}
-      ];
-    }
-
-    if(weather === "rain_end"){
-      plans = [
-        {name:"Sprint meteo", tyres:[dryTyre, wet], pits:[rainLap]},
-        {name:"Prudente", tyres:["medium", wet], pits:[rainLap]},
-        {name:"Attacco", tyres:["soft", wet], pits:[rainLap]}
-      ];
-    }
-
-    if(weather === "rain_start"){
-      plans = [
-        {name:"Bagnato - asciutto", tyres:[wet, dryTyre], pits:[backToDryPit]},
-        {name:"Prudente", tyres:[wet, "medium"], pits:[backToDryPit]},
-        {name:"Attacco", tyres:[wet, "soft"], pits:[backToDryPit]}
-      ];
-    }
-
-    if(weather === "full_rain"){
-      plans = [
-        {name:"Bagnato completo", tyres:[wet], pits:[]},
-        {name:"Gestione", tyres:[wet], pits:[]},
-        {name:"Sicurezza", tyres:[wet, wet], pits:[Math.round(laps*0.55)]}
-      ];
-    }
-
-    if(weather === "mixed"){
-      const mixedTyres = backToDryPit ? [dryTyre, wet, dryTyre] : [dryTyre, wet];
-      const mixedPits = backToDryPit ? [rainLap, backToDryPit] : [rainLap];
-      plans = [
-        {name:"Variabile", tyres:mixedTyres, pits:mixedPits},
-        {name:"Prudente", tyres:backToDryPit ? ["medium", wet, "medium"] : ["medium", wet], pits:mixedPits},
-        {name:"Attacco", tyres:backToDryPit ? ["soft", wet, "soft"] : ["soft", wet], pits:mixedPits}
-      ];
-    }
-
-    return orderPlans(normalizePlans(plans, laps), strategyStyle, startPos);
   }
 
   if(weather === "dry"){
-    if(wear === "high" || track.wearMod > 1.18){
-      plans = [
-        {name:"Principale",        tyres:["medium","hard","soft"], pits:[Math.round(laps*0.33)+ai.pitShift, Math.round(laps*0.68)+ai.pitShift]},
-        {name:"Conservativa",      tyres:["medium","hard"],        pits:[Math.round(laps*0.42)+ai.pitShift]},
-        {name:"Aggressiva",        tyres:["soft","medium","soft"], pits:[Math.round(laps*0.24)+ai.pitShift, Math.round(laps*0.62)+ai.pitShift]}
-      ];
-    } else {
-      plans = [
-        {name:"Principale",        tyres:["medium","hard"],        pits:[Math.round(laps*0.39)+ai.pitShift]},
-        {name:"Alternativa lunga", tyres:["hard","medium"],        pits:[Math.round(laps*0.55)+ai.pitShift]},
-        {name:"Aggressiva",        tyres:["soft","hard"],          pits:[Math.round(laps*0.30)+ai.pitShift]}
-      ];
-    }
+    return buildDryRaceStrategies(track, laps, wear, startPos, aiDifficulty, strategyStyle, driverStyle, sessionType);
   }
 
-  if(weather === "rain_end"){
-    if(rainLap > laps * 0.70){
-      plans = [
-        {name:"Principale meteo",  tyres:["medium","hard",wet],         pits:[Math.round(laps*0.38)+ai.pitShift, rainLap]},
-        {name:"Evita sosta extra", tyres:["hard",wet],                  pits:[rainLap]},
-        {name:"Aggressiva",        tyres:["soft","hard",wet],           pits:[Math.round(laps*0.27)+ai.pitShift, rainLap]}
-      ];
-    } else {
-      plans = [
-        {name:"Principale meteo",  tyres:["medium",wet],               pits:[rainLap]},
-        {name:"Conservativa",      tyres:["hard",wet],                  pits:[rainLap]},
-        {name:"Aggressiva",        tyres:["soft","medium",wet],         pits:[Math.round(rainLap*0.45)+ai.pitShift, rainLap]}
-      ];
-    }
-  }
-
-  if(weather === "rain_start"){
-    plans = [
-      {name:"Bagnato - asciutto",  tyres:[wet,"medium","hard"],         pits:[backToDryPit, Math.round((laps+(backToDryPit || rainLap))/2)+ai.pitShift]},
-      {name:"Conservativa",        tyres:[wet,"hard"],                  pits:[backToDryPit]},
-      {name:"Aggressiva",          tyres:[wet,"soft","medium"],         pits:[backToDryPit, Math.round(laps*0.72)+ai.pitShift]}
-    ];
-  }
-
-  if(weather === "full_rain"){
-    plans = [
-      {name:"Bagnato completo",    tyres:[wet,wet],                     pits:[Math.round(laps*0.52)]},
-      {name:"Gestione",            tyres:[wet],                         pits:[]},
-      {name:"Sicurezza",           tyres:[wet,wet,wet],                 pits:[Math.round(laps*0.34), Math.round(laps*0.68)]}
-    ];
-  }
-
-  if(weather === "mixed"){
-    const mixedTyres = backToDryPit ? ["medium",wet,"medium"] : ["medium",wet];
-    const conservativeTyres = backToDryPit ? ["hard",wet,"hard"] : ["hard",wet];
-    const aggressiveTyres = backToDryPit ? ["soft",wet,"soft"] : ["soft",wet];
-    const mixedPits = backToDryPit ? [rainLap, backToDryPit] : [rainLap];
-    plans = [
-      {name:"Variabile",           tyres:mixedTyres,                    pits:mixedPits},
-      {name:"Conservativa",        tyres:conservativeTyres,             pits:mixedPits},
-      {name:"Aggressiva",          tyres:aggressiveTyres,               pits:mixedPits}
-    ];
-  }
-
-  return orderPlans(normalizePlans(plans, laps), strategyStyle, startPos);
+  return ["balanced","safe","attack"].map(profile =>
+    buildWeatherPlan(track, laps, weatherAnalysis, wear, driverStyle, profile)
+  );
 }
 
 /* -----------------------------------------------
@@ -520,17 +712,24 @@ function strategiesHTML(plans, stopHeader = "Pit stop"){
   for(let i = 0; i < plans.length; i++){
     const p = plans[i];
     const isPrimary = i === 0;
-    const stopText = p.pits.length
-      ? p.pits.map(x => "Giro " + x).join(" / ")
+    const stopText = p.windows && p.windows.length
+      ? p.windows.map(([start, end]) => start === end ? "Giro " + start : "Giri " + start + "-" + end).join(" / ")
+      : p.pits.length
+        ? p.pits.map(x => "Giro " + x).join(" / ")
       : (stopHeader === "Run" ? "Run diretto" : "Nessun pit");
+    const deltaText = isPrimary || !Number.isFinite(p.delta) || p.delta === 0 ? "Riferimento" : `+${p.delta.toFixed(1)} s`;
     rows += `<tr>
-      <td class="plan-name ${isPrimary ? 'primary' : ''}">${isPrimary ? 'P1 ' : ''}${p.name}</td>
+      <td class="plan-name ${isPrimary ? 'primary' : ''}">
+        ${isPrimary ? 'P1 ' : ''}${p.name}
+        ${p.reason ? `<span class="plan-reason">${p.reason}</span>` : ""}
+      </td>
       <td>${p.tyres.map(tag).join('<span class="arrow-sep">→</span>')}</td>
       <td class="pit-lap">${stopText}</td>
+      <td class="delta-time ${isPrimary ? 'primary' : ''}">${deltaText}</td>
     </tr>`;
   }
   return `<table class="data-table">
-    <thead><tr><th>Piano</th><th>Mescole</th><th>${stopHeader}</th></tr></thead>
+    <thead><tr><th>Piano</th><th>Mescole</th><th>${stopHeader === "Run" ? "Run" : "Finestra box"}</th><th>Delta stimato</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -542,8 +741,9 @@ function stintHTML(plan, track, wear, driverStyle, laps){
     const end   = plan.pits[i] ? plan.pits[i] : laps;
     const stint = Math.max(1, end - current + 1);
     const life  = tyreLife(plan.tyres[i], track, wear, driverStyle);
-    const pct   = Math.round(clamp((stint / life) * 100, 0, 100));
-    const barClass = pct < 60 ? "ok" : pct < 85 ? "warn" : "danger";
+    const pct   = Math.round((stint / life) * 100);
+    const barWidth = clamp(pct, 0, 100);
+    const barClass = pct < 65 ? "ok" : pct < 90 ? "warn" : "danger";
     rows += `<tr>
       <td><strong>${i+1}</strong></td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:12px">${current}-${end}</td>
@@ -551,7 +751,7 @@ function stintHTML(plan, track, wear, driverStyle, laps){
       <td>
         <div class="wear-bar-wrap">
           <span class="wear-pct">${pct}%</span>
-          <div class="wear-bar"><div class="wear-bar-fill ${barClass}" style="width:${pct}%"></div></div>
+          <div class="wear-bar"><div class="wear-bar-fill ${barClass}" style="width:${barWidth}%"></div></div>
         </div>
       </td>
     </tr>`;
@@ -732,7 +932,7 @@ function calculateAll(){
   const rainLap  = weatherAnalysis.rainLap;
   const ai = aiProfile(aiDifficulty);
 
-  const plans = buildStrategies(track, laps, weatherAnalysis, wear, startPos, aiDifficulty, strategyStyle, sessionType);
+  const plans = buildStrategies(track, laps, weatherAnalysis, wear, startPos, aiDifficulty, strategyStyle, sessionType, driverStyle);
   const main  = plans[0];
 
   const isQualy = isQualifyingSession(sessionType);
@@ -773,6 +973,7 @@ function calculateAll(){
         <div class="summary-item"><div class="s-label">Finestra meteo</div><div class="s-value warn">${weatherWindowText(weatherAnalysis, laps)}</div></div>
         <div class="summary-item"><div class="s-label">Piano principale</div><div class="s-value">${main.tyres.map(tag).join('<span class="arrow-sep">→</span>')}</div></div>
         <div class="summary-item"><div class="s-label">${isQualy ? "Run" : "Pit stop"}</div><div class="s-value highlight">${pitCall}</div></div>
+        <div class="summary-item summary-wide"><div class="s-label">Perché è la strategia migliore</div><div class="s-value strategy-reason">${main.reason || "Miglior compromesso stimato per la sessione."}</div></div>
       </div>
       <p style="font-size:12px;color:var(--muted);margin-top:8px">
         Ogni riquadro meteo vale circa <strong style="color:var(--text)">${Math.round(laps/8)}</strong> giri. ${calculationNote}
