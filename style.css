@@ -320,9 +320,6 @@ body::before {
 /* --- CTA BUTTON --- */
 .cta-row {
   margin: 20px 0;
-  display: grid;
-  grid-template-columns: 1.4fr 0.8fr;
-  gap: 10px;
 }
 
 .btn-calculate {
@@ -363,48 +360,6 @@ body::before {
 }
 
 .btn-calculate:active { transform: scale(0.99); }
-
-.strategy-download-button {
-  min-height: 76px;
-  padding: 16px 24px;
-  display: grid;
-  place-items: center;
-  gap: 2px;
-  background:
-    linear-gradient(135deg, rgba(225,6,0,0.15) 0 18px, transparent 18px),
-    #16161d;
-  border: 1px solid rgba(225,6,0,0.5);
-  border-radius: 7px;
-  color: #fff;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s, opacity 0.2s, transform 0.1s;
-}
-
-.strategy-download-button span {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 19px;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-}
-
-.strategy-download-button small {
-  color: #9d9da7;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.6px;
-}
-
-.strategy-download-button:not(:disabled):hover {
-  background: #202029;
-  border-color: var(--red);
-  transform: translateY(-1px);
-}
-
-.strategy-download-button:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
 
 /* --- OUTPUT SECTION --- */
 #output {
@@ -642,8 +597,7 @@ body::before {
   text-transform: uppercase;
 }
 
-.f1-strategy-status,
-.strategy-report-ready {
+.f1-strategy-status {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -655,8 +609,7 @@ body::before {
   text-transform: uppercase;
 }
 
-.f1-strategy-status i,
-.strategy-report-ready i {
+.f1-strategy-status i {
   width: 6px;
   height: 6px;
   display: block;
@@ -2085,7 +2038,6 @@ body::before {
     grid-template-columns: 1fr;
   }
 
-  .cta-row,
   .f1-strategy-card-footer {
     grid-template-columns: 1fr;
   }

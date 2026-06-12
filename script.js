@@ -34,7 +34,6 @@ const tyreBase = {
 };
 
 let f1TelemetryCalibration = null;
-let latestStrategyReport = null;
 
 /* -----------------------------------------------
    UTILITY
@@ -1301,7 +1300,6 @@ function downloadStrategyPdf(report){
 ----------------------------------------------- */
 function calculateAll(){
   const out = document.getElementById("output");
-  const downloadButton = document.getElementById("downloadStrategyPdfBtn");
 
   const trackKey     = document.getElementById("track").value;
   const laps         = Number(document.getElementById("laps").value);
@@ -1339,11 +1337,6 @@ function calculateAll(){
   setInvalidFields(invalidIds);
 
   if(problems.length > 0){
-    latestStrategyReport = null;
-    if(downloadButton){
-      downloadButton.disabled = true;
-      downloadButton.querySelector("small").textContent = "Disponibile dopo il calcolo";
-    }
     out.className = "has-result";
     out.innerHTML = `<div class="out-error"><strong>Controlla questi campi:</strong><br>${problems.join(" · ")}</div>`;
     return;
@@ -1391,7 +1384,7 @@ function calculateAll(){
         <h2>${track.name}</h2>
         <p>${sessionLabel(sessionType)} · ${laps} giri · Partenza P${startPos}</p>
       </div>
-      <span class="strategy-report-ready"><i></i> Report PDF pronto</span>
+      <button class="download-button" id="downloadStrategyPdfBtn" type="button">Scarica PDF strategia</button>
     </div>
 
     <!-- SUMMARY -->
@@ -1445,31 +1438,23 @@ function calculateAll(){
 
   `;
 
-  latestStrategyReport = {
+  const strategyReport = {
     track, laps, startPos, aiDifficulty, ai, driverStyle, wear, strategyStyle,
     sessionType, weatherBlocks, weatherAnalysis, plans, main, radio
   };
-  if(downloadButton){
-    downloadButton.disabled = false;
-    downloadButton.querySelector("small").textContent = "Report completo pronto";
-  }
+  document.getElementById("downloadStrategyPdfBtn").addEventListener("click", event => {
+    downloadStrategyPdf(strategyReport);
+    event.currentTarget.textContent = "PDF scaricato";
+    setTimeout(() => { event.currentTarget.textContent = "Scarica PDF strategia"; }, 1800);
+  });
 }
 
 function initializeApp(){
   const trackSelect = document.getElementById("track");
   const calculateBtn = document.getElementById("calculateBtn");
-  const downloadButton = document.getElementById("downloadStrategyPdfBtn");
 
   if(trackSelect) trackSelect.addEventListener("change", loadTrackDefaults);
   if(calculateBtn) calculateBtn.addEventListener("click", calculateAll);
-  if(downloadButton) downloadButton.addEventListener("click", event => {
-    if(!latestStrategyReport) return;
-    downloadStrategyPdf(latestStrategyReport);
-    const label = event.currentTarget.querySelector("span");
-    const original = label.textContent;
-    label.textContent = "PDF scaricato";
-    setTimeout(() => { label.textContent = original; }, 1800);
-  });
 }
 
 document.addEventListener("DOMContentLoaded", initializeApp);
