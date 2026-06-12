@@ -34,6 +34,7 @@ const tyreBase = {
 };
 
 let f1TelemetryCalibration = null;
+let latestStrategyReport = null;
 
 /* -----------------------------------------------
    UTILITY
@@ -788,6 +789,44 @@ function strategiesHTML(plans, stopHeader = "Pit stop"){
   </table>`;
 }
 
+function recommendedStrategyHTML(plan, laps, isQualy){
+  let startLap = 1;
+  const stints = plan.tyres.map((tyre, index) => {
+    const endLap = plan.pits[index] || laps;
+    const length = Math.max(1, endLap - startLap + 1);
+    const tyreInfo = tyreBase[tyre] || {name:tyre};
+    const code = tyre === "soft" ? "S" : tyre === "medium" ? "M" : tyre === "hard" ? "H" : tyre === "inter" ? "I" : "W";
+    const stint = `
+      <article class="f1-strategy-stint" style="--stint-share:${length}">
+        <div class="f1-tyre-ring f1-tyre-${tyre}"><span>${code}</span></div>
+        <div class="f1-stint-copy">
+          <small>Stint ${String(index + 1).padStart(2, "0")}</small>
+          <strong>${tyreInfo.name}</strong>
+          <span>Giri ${startLap}-${endLap}</span>
+        </div>
+      </article>`;
+    const pit = index < plan.tyres.length - 1
+      ? `<div class="f1-pit-marker"><i></i><small>${isQualy ? "Run" : `Pit ${String(index + 1).padStart(2, "0")}`}</small><strong>${plan.windows && plan.windows[index] ? `${plan.windows[index][0]}-${plan.windows[index][1]}` : plan.pits[index]}</strong></div>`
+      : "";
+    startLap = endLap + 1;
+    return stint + pit;
+  }).join("");
+
+  return `
+    <section class="f1-strategy-card">
+      <header class="f1-strategy-card-header">
+        <div><span>Piano principale</span><strong>${plan.name}</strong></div>
+        <div class="f1-strategy-status"><i></i> Strategia consigliata</div>
+      </header>
+      <div class="f1-strategy-timeline">${stints}</div>
+      <footer class="f1-strategy-card-footer">
+        <div><span>${isQualy ? "Sequenza" : "Soste previste"}</span><strong>${isQualy ? "Out lap / Push / In lap" : plan.pits.length}</strong></div>
+        <div><span>Delta riferimento</span><strong class="good">0.0 s</strong></div>
+        <p>${plan.reason || "Miglior compromesso stimato per la sessione."}</p>
+      </footer>
+    </section>`;
+}
+
 function stintHTML(plan, track, wear, driverStyle, laps){
   let current = 1;
   let rows = "";
@@ -994,6 +1033,48 @@ function strategyPdfTyreText(plan){
   return plan.tyres.map(tyre => tyreBase[tyre] ? tyreBase[tyre].name : tyre).join(" > ");
 }
 
+function strategyPdfTyreColor(tyre){
+  if(tyre === "soft") return {fill:"0.91 0 0.10", text:"1 1 1", code:"S"};
+  if(tyre === "medium") return {fill:"0.96 0.76 0", text:"0.05 0.05 0.06", code:"M"};
+  if(tyre === "hard") return {fill:"0.84 0.84 0.84", text:"0.05 0.05 0.06", code:"H"};
+  if(tyre === "inter") return {fill:"0.11 0.73 0.33", text:"1 1 1", code:"I"};
+  return {fill:"0.08 0.40 0.75", text:"1 1 1", code:"W"};
+}
+
+function strategyPdfMainTimeline(report){
+  const plan = report.main;
+  const gap = 4;
+  const x = 49;
+  const availableWidth = 497 - gap * Math.max(0, plan.tyres.length - 1);
+  let rangeStart = 1;
+  const stintWeights = plan.tyres.map((tyre, index) => {
+    const rangeEnd = plan.pits[index] || report.laps;
+    const weight = Math.max(0.06, Math.max(1, rangeEnd - rangeStart + 1) / report.laps);
+    rangeStart = rangeEnd + 1;
+    return weight;
+  });
+  const totalWeight = stintWeights.reduce((sum, weight) => sum + weight, 0);
+  let cursor = x;
+  let startLap = 1;
+  let stream = strategyPdfText("PIANO GARA PREVISTO", x, 550, 6.5, "0.57 0.57 0.62", "F3");
+
+  plan.tyres.forEach((tyre, index) => {
+    const endLap = plan.pits[index] || report.laps;
+    const width = availableWidth * (stintWeights[index] / totalWeight);
+    const tyreColor = strategyPdfTyreColor(tyre);
+    stream += strategyPdfRect(cursor, 514, width, 27, tyreColor.fill);
+    stream += strategyPdfText(tyreColor.code, cursor + 8, 523, 10, tyreColor.text, "F3");
+    if(width > 58) stream += strategyPdfText(`${startLap}-${endLap}`, cursor + 23, 523, 6.5, tyreColor.text, "F3");
+    if(index < plan.tyres.length - 1){
+      stream += strategyPdfRect(cursor + width, 509, 2, 37, "1 1 1");
+    }
+    cursor += width + gap;
+    startLap = endLap + 1;
+  });
+
+  return stream;
+}
+
 function strategyPdfStopText(plan, isQualy){
   if(plan.windows && plan.windows.length){
     return plan.windows.map(([start, end]) => start === end ? `Giro ${start}` : `Giri ${start}-${end}`).join(" / ");
@@ -1142,11 +1223,9 @@ function createStrategyPdfBlob(report){
   firstPage += strategyPdfStrokeRect(34, 474, 527, 123, "0.32 0.08 0.09", 0.8);
   firstPage += strategyPdfRect(34, 474, 5, 123, "0.882 0.024 0");
   firstPage += strategyPdfText("01 / STRATEGIA CONSIGLIATA", 49, 575, 9, "1 0.28 0.25", "F3");
-  const mainTyres = strategyPdfTyreText(report.main);
-  const mainTyreSize = mainTyres.length > 58 ? 11 : mainTyres.length > 44 ? 13 : 17;
-  firstPage += strategyPdfText(strategyPdfEllipsis(mainTyres, 74), 49, 548, mainTyreSize, "0.97 0.97 0.98", "F2");
-  firstPage += strategyPdfText(strategyPdfStopText(report.main, isQualifyingSession(report.sessionType)), 49, 526, 8, "0.72 0.72 0.76", "F3");
-  firstPage += strategyPdfParagraph(report.main.reason || "Miglior compromesso stimato per la sessione.", 49, 503, 7.5, "0.57 0.57 0.62", 96, 10, 2);
+  firstPage += strategyPdfMainTimeline(report);
+  firstPage += strategyPdfText(strategyPdfEllipsis(strategyPdfStopText(report.main, isQualifyingSession(report.sessionType)), 82), 49, 497, 7.3, "0.72 0.72 0.76", "F3");
+  firstPage += strategyPdfParagraph(report.main.reason || "Miglior compromesso stimato per la sessione.", 49, 481, 6.8, "0.57 0.57 0.62", 108, 8, 1);
   firstPage += strategyPdfWeather(report);
   firstPage += strategyPdfPlans(report);
   firstPage += strategyPdfFooter(0, pageCount);
@@ -1222,6 +1301,7 @@ function downloadStrategyPdf(report){
 ----------------------------------------------- */
 function calculateAll(){
   const out = document.getElementById("output");
+  const downloadButton = document.getElementById("downloadStrategyPdfBtn");
 
   const trackKey     = document.getElementById("track").value;
   const laps         = Number(document.getElementById("laps").value);
@@ -1259,6 +1339,11 @@ function calculateAll(){
   setInvalidFields(invalidIds);
 
   if(problems.length > 0){
+    latestStrategyReport = null;
+    if(downloadButton){
+      downloadButton.disabled = true;
+      downloadButton.querySelector("small").textContent = "Disponibile dopo il calcolo";
+    }
     out.className = "has-result";
     out.innerHTML = `<div class="out-error"><strong>Controlla questi campi:</strong><br>${problems.join(" · ")}</div>`;
     return;
@@ -1306,20 +1391,20 @@ function calculateAll(){
         <h2>${track.name}</h2>
         <p>${sessionLabel(sessionType)} · ${laps} giri · Partenza P${startPos}</p>
       </div>
-      <button class="download-button" id="downloadStrategyPdfBtn" type="button">Scarica PDF strategia</button>
+      <span class="strategy-report-ready"><i></i> Report PDF pronto</span>
     </div>
 
     <!-- SUMMARY -->
     <div class="out-section">
       <div class="out-title"><span class="title-index">01</span> Strategia consigliata</div>
+      ${recommendedStrategyHTML(main, laps, isQualy)}
       <div class="summary-grid">
         <div class="summary-item"><div class="s-label">Circuito</div><div class="s-value">${track.name}</div></div>
         <div class="summary-item"><div class="s-label">Sessione</div><div class="s-value">${sessionLabel(sessionType)}</div></div>
         <div class="summary-item"><div class="s-label">Assistenze</div><div class="s-value good">Tutte attive</div></div>
         <div class="summary-item"><div class="s-label">IA Avversari</div><div class="s-value">${ai.name} (${aiDifficulty})</div></div>
-        <div class="summary-item"><div class="s-label">Dati gomme</div><div class="s-value ${f1TelemetryCalibration ? "good" : "warn"}">${f1TelemetryCalibration ? "Telemetria F1 25" : "Modello stimato"}</div></div>
+        <div class="summary-item"><div class="s-label">Dati strategia</div><div class="s-value warn">Modello stimato</div></div>
         <div class="summary-item"><div class="s-label">Finestra meteo</div><div class="s-value warn">${weatherWindowText(weatherAnalysis, laps)}</div></div>
-        <div class="summary-item"><div class="s-label">Piano principale</div><div class="s-value">${main.tyres.map(tag).join('<span class="arrow-sep">→</span>')}</div></div>
         <div class="summary-item"><div class="s-label">${isQualy ? "Run" : "Pit stop"}</div><div class="s-value highlight">${pitCall}</div></div>
         <div class="summary-item summary-wide"><div class="s-label">Perché è la strategia migliore</div><div class="s-value strategy-reason">${main.reason || "Miglior compromesso stimato per la sessione."}</div></div>
       </div>
@@ -1360,26 +1445,31 @@ function calculateAll(){
 
   `;
 
-  const strategyReport = {
+  latestStrategyReport = {
     track, laps, startPos, aiDifficulty, ai, driverStyle, wear, strategyStyle,
     sessionType, weatherBlocks, weatherAnalysis, plans, main, radio
   };
-  document.getElementById("downloadStrategyPdfBtn").addEventListener("click", event => {
-    downloadStrategyPdf(strategyReport);
-    event.currentTarget.textContent = "PDF scaricato";
-    setTimeout(() => { event.currentTarget.textContent = "Scarica PDF strategia"; }, 1800);
-  });
+  if(downloadButton){
+    downloadButton.disabled = false;
+    downloadButton.querySelector("small").textContent = "Report completo pronto";
+  }
 }
 
 function initializeApp(){
   const trackSelect = document.getElementById("track");
   const calculateBtn = document.getElementById("calculateBtn");
-  const telemetryBtn = document.getElementById("connectTelemetryBtn");
+  const downloadButton = document.getElementById("downloadStrategyPdfBtn");
 
   if(trackSelect) trackSelect.addEventListener("change", loadTrackDefaults);
   if(calculateBtn) calculateBtn.addEventListener("click", calculateAll);
-  if(telemetryBtn) telemetryBtn.addEventListener("click", connectF1Telemetry);
-  if(telemetryBtn) connectF1Telemetry();
+  if(downloadButton) downloadButton.addEventListener("click", event => {
+    if(!latestStrategyReport) return;
+    downloadStrategyPdf(latestStrategyReport);
+    const label = event.currentTarget.querySelector("span");
+    const original = label.textContent;
+    label.textContent = "PDF scaricato";
+    setTimeout(() => { label.textContent = original; }, 1800);
+  });
 }
 
 document.addEventListener("DOMContentLoaded", initializeApp);
