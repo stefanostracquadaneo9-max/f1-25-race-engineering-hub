@@ -933,6 +933,290 @@ function setupHTML(s){
   ).join('') + '</div>';
 }
 
+function strategyPdfSafeText(value){
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function strategyPdfText(text, x, y, size, color = "1 1 1", font = "F1"){
+  return `BT /${font} ${size} Tf ${color} rg 1 0 0 1 ${x} ${y} Tm (${strategyPdfSafeText(text)}) Tj ET\n`;
+}
+
+function strategyPdfRect(x, y, width, height, color){
+  return `${color} rg ${x} ${y} ${width} ${height} re f\n`;
+}
+
+function strategyPdfStrokeRect(x, y, width, height, color, lineWidth = 1){
+  return `${color} RG ${lineWidth} w ${x} ${y} ${width} ${height} re S\n`;
+}
+
+function strategyPdfLine(x1, y1, x2, y2, color, lineWidth = 1){
+  return `${color} RG ${lineWidth} w ${x1} ${y1} m ${x2} ${y2} l S\n`;
+}
+
+function strategyPdfWrap(text, maxLength){
+  const words = strategyPdfSafeText(text).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for(const word of words){
+    const candidate = line ? `${line} ${word}` : word;
+    if(candidate.length > maxLength && line){
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+  if(line) lines.push(line);
+  return lines;
+}
+
+function strategyPdfParagraph(text, x, y, size, color, maxLength, lineHeight, maxLines = 3, font = "F1"){
+  const wrapped = strategyPdfWrap(text, maxLength);
+  const lines = wrapped.slice(0, maxLines);
+  if(wrapped.length > maxLines && lines.length){
+    lines[lines.length - 1] = `${lines[lines.length - 1].slice(0, -3)}...`;
+  }
+  return lines.map((line, index) => strategyPdfText(line, x, y - index * lineHeight, size, color, font)).join("");
+}
+
+function strategyPdfEllipsis(text, maxLength){
+  const safeText = strategyPdfSafeText(text);
+  return safeText.length > maxLength ? `${safeText.slice(0, maxLength - 3)}...` : safeText;
+}
+
+function strategyPdfTyreText(plan){
+  return plan.tyres.map(tyre => tyreBase[tyre] ? tyreBase[tyre].name : tyre).join(" > ");
+}
+
+function strategyPdfStopText(plan, isQualy){
+  if(plan.windows && plan.windows.length){
+    return plan.windows.map(([start, end]) => start === end ? `Giro ${start}` : `Giri ${start}-${end}`).join(" / ");
+  }
+  if(plan.pits && plan.pits.length) return plan.pits.map(pit => `Giro ${pit}`).join(" / ");
+  return isQualy ? "Run diretto" : "Nessun pit";
+}
+
+function strategyPdfHeader(track, pageIndex, pageCount, title){
+  const colors = {
+    background:"0.020 0.020 0.027",
+    surface:"0.055 0.055 0.071",
+    red:"0.882 0.024 0",
+    muted:"0.57 0.57 0.62",
+    line:"0.14 0.14 0.18"
+  };
+  let stream = strategyPdfRect(0, 0, 595, 842, colors.background);
+  for(let x = 34; x <= 561; x += 32) stream += strategyPdfLine(x, 64, x, 744, "0.055 0.055 0.072", 0.35);
+  for(let y = 64; y <= 744; y += 32) stream += strategyPdfLine(34, y, 561, y, "0.055 0.055 0.072", 0.35);
+  stream += strategyPdfRect(0, 752, 595, 84, colors.surface);
+  stream += `${colors.red} rg 0 752 m 190 752 l 226 836 l 0 836 l h f\n`;
+  stream += strategyPdfRect(0, 836, 190, 6, colors.red);
+  stream += strategyPdfRect(190, 836, 28, 6, "1 1 1");
+  stream += strategyPdfRect(218, 836, 377, 6, colors.red);
+  stream += strategyPdfText("RACE ENGINEERING", 34, 792, 26, "1 1 1", "F2");
+  stream += strategyPdfText("F1 25 PERFORMANCE HUB", 36, 770, 8, "1 1 1", "F3");
+  stream += strategyPdfText("STRATEGY DESK / 01", 406, 806, 9, colors.red, "F3");
+  stream += strategyPdfText(`REPORT ${String(pageIndex + 1).padStart(2, "0")} / ${String(pageCount).padStart(2, "0")}`, 425, 784, 8, colors.muted, "F3");
+  stream += strategyPdfText(title, 34, 713, 25, "0.97 0.97 0.98", "F2");
+  stream += strategyPdfText(track.name.toUpperCase(), 34, 687, 14, colors.red, "F3");
+  stream += strategyPdfLine(34, 671, 561, 671, colors.line, 0.8);
+  return stream;
+}
+
+function strategyPdfFooter(pageIndex, pageCount){
+  let stream = strategyPdfLine(34, 50, 561, 50, "0.14 0.14 0.18", 0.7);
+  stream += strategyPdfRect(34, 25, 4, 13, "0.882 0.024 0");
+  stream += strategyPdfText("PIANO CALCOLATO DAL MODELLO STRATEGICO RACE ENGINEERING HUB", 47, 29, 6.8, "0.57 0.57 0.62", "F3");
+  stream += strategyPdfText(`${String(pageIndex + 1).padStart(2, "0")} / ${String(pageCount).padStart(2, "0")}`, 521, 29, 7.5, "0.97 0.97 0.98", "F3");
+  return stream;
+}
+
+function strategyPdfMetadata(report){
+  const metadata = [
+    ["SESSIONE", sessionLabel(report.sessionType)],
+    ["DISTANZA", `${report.laps} giri`],
+    ["PARTENZA / IA", `P${report.startPos} / ${report.aiDifficulty}`]
+  ];
+  let stream = "";
+  metadata.forEach(([label, value], index) => {
+    const x = 34 + index * 178;
+    stream += strategyPdfRect(x, 617, 171, 40, "0.071 0.071 0.090");
+    stream += strategyPdfStrokeRect(x, 617, 171, 40, "0.16 0.16 0.20", 0.6);
+    stream += strategyPdfText(label, x + 11, 642, 6.5, "0.57 0.57 0.62", "F3");
+    stream += strategyPdfText(value, x + 11, 626, 9.5, "0.97 0.97 0.98", "F2");
+  });
+  return stream;
+}
+
+function strategyPdfWeather(report){
+  let stream = strategyPdfText("02 / PREVISIONE METEO F1 25", 34, 448, 10, "0.97 0.97 0.98", "F3");
+  report.weatherBlocks.forEach((weather, index) => {
+    const range = blockLapRange(index, report.laps);
+    const x = 34 + index * 66;
+    const wet = ["light_rain","rain","heavy_rain"].includes(weather);
+    stream += strategyPdfRect(x, 390, 61, 42, wet ? "0.055 0.16 0.28" : "0.071 0.071 0.090");
+    stream += strategyPdfStrokeRect(x, 390, 61, 42, wet ? "0.18 0.45 0.72" : "0.16 0.16 0.20", 0.6);
+    stream += strategyPdfText(weatherIcon(weather), x + 8, 415, 8, wet ? "0.35 0.67 1" : "0.97 0.97 0.98", "F3");
+    stream += strategyPdfText(`${range.start}-${range.end}`, x + 8, 399, 7, "0.57 0.57 0.62", "F3");
+  });
+  return stream;
+}
+
+function strategyPdfPlans(report){
+  const isQualy = isQualifyingSession(report.sessionType);
+  let stream = strategyPdfText("03 / CONFRONTO PIANI", 34, 361, 10, "0.97 0.97 0.98", "F3");
+  report.plans.slice(0, 3).forEach((plan, index) => {
+    const top = 344 - index * 79;
+    const bottom = top - 68;
+    stream += strategyPdfRect(34, bottom, 527, 68, index === 0 ? "0.082 0.066 0.078" : "0.071 0.071 0.090");
+    stream += strategyPdfStrokeRect(34, bottom, 527, 68, index === 0 ? "0.55 0.10 0.10" : "0.16 0.16 0.20", 0.7);
+    stream += strategyPdfRect(34, bottom, 4, 68, index === 0 ? "0.882 0.024 0" : "0.22 0.22 0.27");
+    stream += strategyPdfText(`${index === 0 ? "P1 / " : `P${index + 1} / `}${plan.name.toUpperCase()}`, 48, top - 20, 9, "0.97 0.97 0.98", "F3");
+    stream += strategyPdfText(strategyPdfEllipsis(strategyPdfTyreText(plan), 29), 48, top - 39, 8, index === 0 ? "1 0.28 0.25" : "0.72 0.72 0.76", "F2");
+    stream += strategyPdfText(strategyPdfEllipsis(strategyPdfStopText(plan, isQualy), 38), 258, top - 39, 7.2, "0.72 0.72 0.76", "F3");
+    const delta = index === 0 || !Number.isFinite(plan.delta) || plan.delta === 0 ? "RIF." : `+${plan.delta.toFixed(1)} S`;
+    stream += strategyPdfText(delta, 500, top - 39, 8, index === 0 ? "1 0.28 0.25" : "0.97 0.97 0.98", "F3");
+    stream += strategyPdfParagraph(plan.reason || "", 48, top - 55, 6.8, "0.49 0.49 0.54", 108, 8, 1);
+  });
+  return stream;
+}
+
+function strategyPdfStints(report){
+  const isQualy = isQualifyingSession(report.sessionType);
+  let stream = strategyPdfText(isQualy ? "02 / PIANO RUN PRINCIPALE" : "02 / STINT PRINCIPALI", 34, 590, 10, "0.97 0.97 0.98", "F3");
+  const rows = [];
+  if(isQualy){
+    rows.push(["RUN 01", strategyPdfTyreText(report.main), "OUT LAP > PUSH LAP > IN LAP"]);
+  } else {
+    let start = 1;
+    report.main.tyres.forEach((tyre, index) => {
+      const end = report.main.pits[index] || report.laps;
+      rows.push([`STINT ${String(index + 1).padStart(2, "0")}`, tyreBase[tyre] ? tyreBase[tyre].name : tyre, `Giri ${start}-${end}`]);
+      start = end + 1;
+    });
+  }
+  rows.forEach((row, index) => {
+    const top = 571 - index * 42;
+    const bottom = top - 34;
+    stream += strategyPdfRect(34, bottom, 527, 34, index % 2 ? "0.086 0.086 0.106" : "0.071 0.071 0.090");
+    stream += strategyPdfStrokeRect(34, bottom, 527, 34, "0.16 0.16 0.20", 0.45);
+    stream += strategyPdfText(row[0], 48, bottom + 13, 7.5, "0.57 0.57 0.62", "F3");
+    stream += strategyPdfText(row[1], 165, bottom + 13, 9, "0.97 0.97 0.98", "F2");
+    stream += strategyPdfText(row[2], 350, bottom + 13, 8, "1 0.28 0.25", "F3");
+  });
+  return {stream, nextY:571 - rows.length * 42 - 20};
+}
+
+function strategyPdfOperationalCalls(report, startY){
+  const firstPit = report.main.pits[0] || null;
+  const nextTyre = report.main.tyres[1] || (report.main.tyres[0] === "soft" ? "medium" : "hard");
+  const calls = [
+    ["FINESTRA BOX", strategyPdfStopText(report.main, isQualifyingSession(report.sessionType))],
+    ["SAFETY CAR / VSC", firstPit ? `Valuta pit anticipato entro 4-5 giri dalla finestra e monta ${tyreBase[nextTyre] ? tyreBase[nextTyre].name : nextTyre}.` : "Proteggi la posizione: fermati solo con pit quasi gratuito, danni o cambio meteo."],
+    ["GESTIONE GOMME", tyreStressTarget(report.track)],
+    ["METEO", weatherWindowText(report.weatherAnalysis, report.laps)],
+    ["TRACK POSITION", `${passingLabel(report.track)}: copri soltanto i rivali diretti e cerca aria libera.`]
+  ];
+  let stream = strategyPdfText("03 / CHIAMATE OPERATIVE", 34, startY, 10, "0.97 0.97 0.98", "F3");
+  calls.forEach(([label, value], index) => {
+    const top = startY - 16 - index * 47;
+    const bottom = top - 40;
+    stream += strategyPdfRect(34, bottom, 527, 40, "0.071 0.071 0.090");
+    stream += strategyPdfRect(34, bottom, 4, 40, "0.882 0.024 0");
+    stream += strategyPdfText(label, 48, bottom + 24, 7, "1 0.28 0.25", "F3");
+    stream += strategyPdfParagraph(value, 160, bottom + 24, 7.2, "0.72 0.72 0.76", 72, 9, 2);
+  });
+  return {stream, nextY:startY - 16 - calls.length * 47 - 18};
+}
+
+function createStrategyPdfBlob(report){
+  const pageCount = 3;
+  let firstPage = strategyPdfHeader(report.track, 0, pageCount, "REPORT STRATEGIA");
+  firstPage += strategyPdfMetadata(report);
+  firstPage += strategyPdfRect(34, 474, 527, 123, "0.071 0.071 0.090");
+  firstPage += strategyPdfStrokeRect(34, 474, 527, 123, "0.32 0.08 0.09", 0.8);
+  firstPage += strategyPdfRect(34, 474, 5, 123, "0.882 0.024 0");
+  firstPage += strategyPdfText("01 / STRATEGIA CONSIGLIATA", 49, 575, 9, "1 0.28 0.25", "F3");
+  const mainTyres = strategyPdfTyreText(report.main);
+  const mainTyreSize = mainTyres.length > 58 ? 11 : mainTyres.length > 44 ? 13 : 17;
+  firstPage += strategyPdfText(strategyPdfEllipsis(mainTyres, 74), 49, 548, mainTyreSize, "0.97 0.97 0.98", "F2");
+  firstPage += strategyPdfText(strategyPdfStopText(report.main, isQualifyingSession(report.sessionType)), 49, 526, 8, "0.72 0.72 0.76", "F3");
+  firstPage += strategyPdfParagraph(report.main.reason || "Miglior compromesso stimato per la sessione.", 49, 503, 7.5, "0.57 0.57 0.62", 96, 10, 2);
+  firstPage += strategyPdfWeather(report);
+  firstPage += strategyPdfPlans(report);
+  firstPage += strategyPdfFooter(0, pageCount);
+
+  let secondPage = strategyPdfHeader(report.track, 1, pageCount, "ANALISI STINT");
+  secondPage += strategyPdfMetadata(report);
+  const stintSection = strategyPdfStints(report);
+  secondPage += stintSection.stream;
+  secondPage += strategyPdfRect(34, 82, 527, 83, "0.071 0.071 0.090");
+  secondPage += strategyPdfStrokeRect(34, 82, 527, 83, "0.16 0.16 0.20", 0.7);
+  secondPage += strategyPdfRect(34, 82, 5, 83, "0.882 0.024 0");
+  secondPage += strategyPdfText("03 / BRIEF DI ESECUZIONE", 49, 143, 8, "1 0.28 0.25", "F3");
+  secondPage += strategyPdfParagraph(report.track.note, 49, 122, 7.4, "0.72 0.72 0.76", 98, 10, 2);
+  secondPage += strategyPdfParagraph(report.main.reason || "", 49, 97, 7, "0.50 0.50 0.55", 102, 9, 2);
+  secondPage += strategyPdfFooter(1, pageCount);
+
+  let thirdPage = strategyPdfHeader(report.track, 2, pageCount, "PIANO OPERATIVO");
+  thirdPage += strategyPdfMetadata(report);
+  const callsSection = strategyPdfOperationalCalls(report, 590);
+  thirdPage += callsSection.stream;
+  thirdPage += strategyPdfRect(34, 226, 527, 83, "0.082 0.066 0.078");
+  thirdPage += strategyPdfStrokeRect(34, 226, 527, 83, "0.55 0.10 0.10", 0.7);
+  thirdPage += strategyPdfText("04 / CHIAMATA RADIO", 48, 287, 8, "1 0.28 0.25", "F3");
+  thirdPage += strategyPdfParagraph(report.radio, 48, 266, 7.5, "0.82 0.82 0.85", 100, 10, 3);
+  thirdPage += strategyPdfFooter(2, pageCount);
+
+  const pageStreams = [firstPage, secondPage, thirdPage];
+  const objects = [];
+  objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+  objects[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
+  objects[5] = "<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>";
+  const pageReferences = [];
+  pageStreams.forEach((stream, index) => {
+    const pageObject = 6 + index * 2;
+    const streamObject = pageObject + 1;
+    pageReferences.push(`${pageObject} 0 R`);
+    objects[pageObject] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents ${streamObject} 0 R >>`;
+    objects[streamObject] = `<< /Length ${stream.length} >>\nstream\n${stream}endstream`;
+  });
+  objects[2] = `<< /Type /Pages /Kids [${pageReferences.join(" ")}] /Count ${pageReferences.length} >>`;
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for(let index = 1; index < objects.length; index++){
+    offsets[index] = pdf.length;
+    pdf += `${index} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for(let index = 1; index < objects.length; index++){
+    pdf += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return new Blob([pdf], {type:"application/pdf"});
+}
+
+function downloadStrategyPdf(report){
+  const blob = createStrategyPdfBlob(report);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const filename = report.track.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  link.href = url;
+  link.download = `strategia-f1-25-${filename}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /* -----------------------------------------------
    MAIN CALCULATE
 ----------------------------------------------- */
@@ -1016,6 +1300,15 @@ function calculateAll(){
   out.className = "has-result";
   out.innerHTML = `
 
+    <div class="setup-result-header">
+      <div>
+        <span class="result-code">STRATEGY REPORT / F1 25</span>
+        <h2>${track.name}</h2>
+        <p>${sessionLabel(sessionType)} · ${laps} giri · Partenza P${startPos}</p>
+      </div>
+      <button class="download-button" id="downloadStrategyPdfBtn" type="button">Scarica PDF strategia</button>
+    </div>
+
     <!-- SUMMARY -->
     <div class="out-section">
       <div class="out-title"><span class="title-index">01</span> Strategia consigliata</div>
@@ -1066,6 +1359,16 @@ function calculateAll(){
     </div>
 
   `;
+
+  const strategyReport = {
+    track, laps, startPos, aiDifficulty, ai, driverStyle, wear, strategyStyle,
+    sessionType, weatherBlocks, weatherAnalysis, plans, main, radio
+  };
+  document.getElementById("downloadStrategyPdfBtn").addEventListener("click", event => {
+    downloadStrategyPdf(strategyReport);
+    event.currentTarget.textContent = "PDF scaricato";
+    setTimeout(() => { event.currentTarget.textContent = "Scarica PDF strategia"; }, 1800);
+  });
 }
 
 function initializeApp(){

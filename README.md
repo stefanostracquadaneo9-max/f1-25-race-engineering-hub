@@ -7,6 +7,7 @@ Applicazione web statica per preparare una strategia di gara e generare un asset
 - Home page con accesso rapido ai due strumenti
 - Strategy Desk con analisi di stint, pit stop e otto finestre meteo
 - Simulatore strategico che confronta una, due e tre soste usando degrado, pit loss, track position e crossover meteo
+- Esportazione PDF della strategia completa con piano operativo
 - Bridge opzionale per calibrare la strategia con vita utile, usura, delta e set gomme trasmessi dalla telemetria UDP ufficiale di F1 25
 - Setup Lab che richiede soltanto dati mostrati da F1 25
 - Foglio assetto nello stesso ordine delle sezioni del gioco
